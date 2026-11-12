@@ -1,7 +1,7 @@
 // The host's control panel. It never shows a price, an earning or a total
 // before the final standings: the host may be playing too.
 
-import { $, h, toast, store, connect, call, watchConnection, Countdown, clockText, plural, fruitLookup } from './common.js';
+import { $, h, toast, store, connect, call, watchConnection, Countdown, clockText, plural, fruitLookup, avatarEl, rankLabel } from './common.js';
 
 const PASSWORD_KEY = 'fruitstand:host-password';
 const ROOM_KEY = 'fruitstand:host-room';
@@ -181,7 +181,7 @@ const STATUS_TEXT = {
   lobby: 'Lobby',
   bidding: 'Bidding is open',
   results: 'Round finished',
-  reveal: 'Secret prices on screen',
+  reveal: 'Hidden prices on screen',
   final: 'Final standings',
 };
 
@@ -236,7 +236,7 @@ function render() {
     );
   } else if (s.status === 'results') {
     main.append(lastRound
-      ? h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:reveal') }, '🙈 Reveal secret prices')
+      ? h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:reveal') }, '🙈 Reveal hidden prices')
       : h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:next') }, `Start round ${s.round + 1}`));
     main.append(h('span', { class: 'hint' }, lastRound ? 'Plays on the big screen, one stand at a time.' : 'The timer starts as soon as the round opens.'));
   } else if (s.status === 'reveal') {
@@ -269,7 +269,7 @@ function render() {
     if (bidding) sub.push(p.submitted ? 'locked in' : 'not yet');
     if (!p.connected) sub.push(h('span', { class: 'p-off' }, 'offline'));
     return h('li', { class: cls },
-      h('span', { class: 'p-avatar' }, p.avatar),
+      avatarEl(p.avatar, p.ring, 'p-avatar'),
       h('span', { class: 'p-name' }, p.name, h('small', null, sub.flatMap((item, i) => (i ? [' · ', item] : [item])))),
       inLobby ? h('button', {
         class: 'btn btn--warn btn--small', type: 'button',
@@ -294,7 +294,7 @@ function render() {
     parts.push(h('section', { class: 'card' },
       h('h2', null, '🏆 Final standings'),
       h('ol', { class: 'board' }, s.standings.map((row) =>
-        h('li', null, h('span', { class: 'b-rank' }, `#${row.rank}`), h('span', null, row.avatar), h('span', { class: 'b-name' }, row.name), h('span', null, `$${row.total}`)))),
+        h('li', null, h('span', { class: 'b-rank' }, rankLabel(row, s.standings)), avatarEl(row.avatar, row.ring), h('span', { class: 'b-name' }, row.name), h('span', null, `$${row.total}`)))),
     ));
   }
 

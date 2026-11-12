@@ -44,10 +44,41 @@ export const defaultConfig = {
   changeTokens: 1, // Change tokens per player for the whole game
   bidSeconds: 300, // bidding timer per round
   maxPlayers: 0, // 0 = no limit
+
+  // Round 2 background fruit. Secret fruits drift past this many times as
+  // often as the others. 1 removes the tell.
+  ambientSecretWeight: 3,
+  ambientCountProjector: 10, // fruit on the big screen at once (8-12 looks right)
+  ambientCountPhone: 5, // fruit on a phone at once (4-6 looks right)
+
+  // Avatar ring colours. Each player gets the first one that is free for
+  // their animal, so no two players look the same.
+  avatarRingColors: [
+    '#e2552d', '#2ba39b', '#f7bb3d', '#5b6ee1', '#d9527f', '#3d9a5c',
+    '#8e5bd0', '#f08a24', '#1d8fd1', '#8d5a2b', '#96c93d', '#e84a8a',
+    '#2c4a7c', '#19b5c8', '#b03a2e', '#c9a227', '#6b7a8f', '#b76fe0',
+    '#0f7d5c', '#ff8f73',
+  ],
+
+  // Sky colours for each part of the game, top to bottom. Two or more
+  // colour stops each. The reveal and final standings both use `final`.
+  skyTheme: {
+    lobby: ['#bfe3f5', '#fde6d2', '#ffd9b8'], // early morning: light blue over pale peach
+    round1: ['#8fd0f5', '#c9eafb', '#eef8fd'], // bright morning: soft blue
+    round2: ['#a9d6ea', '#f3ecd2', '#fbe7b8'], // midday: hazy and warm
+    round3: ['#f5c860', '#fbdf9a', '#fdeec8'], // afternoon: golden
+    round4: ['#f08a4b', '#f4a07a', '#f3a6c0'], // sunset: orange to pink
+    final: ['#4a2d7a', '#33286b', '#1b2452'], // dusk: deep purple to navy
+  },
 };
+
+const SKY_STATES = ['lobby', 'round1', 'round2', 'round3', 'round4', 'final'];
+const isColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 
 export function resolveConfig(overrides = {}) {
   const c = structuredClone({ ...defaultConfig, ...overrides });
+  // A partial skyTheme only replaces the states it names.
+  c.skyTheme = { ...structuredClone(defaultConfig.skyTheme), ...(overrides.skyTheme || {}) };
   const int = (v) => Number.isInteger(v);
   const problems = [];
   if (!Array.isArray(c.fruits) || c.fruits.length < 2) problems.push('fruits needs at least 2 entries');
@@ -63,6 +94,19 @@ export function resolveConfig(overrides = {}) {
   if (!int(c.changeTokens) || c.changeTokens < 0) problems.push('changeTokens is invalid');
   if (typeof c.bidSeconds !== 'number' || c.bidSeconds <= 0) problems.push('bidSeconds must be above 0');
   if (!int(c.maxPlayers) || c.maxPlayers < 0) problems.push('maxPlayers is invalid');
+  if (typeof c.ambientSecretWeight !== 'number' || !(c.ambientSecretWeight >= 1)) problems.push('ambientSecretWeight must be 1 or more');
+  if (!int(c.ambientCountProjector) || c.ambientCountProjector < 0) problems.push('ambientCountProjector is invalid');
+  if (!int(c.ambientCountPhone) || c.ambientCountPhone < 0) problems.push('ambientCountPhone is invalid');
+  if (!Array.isArray(c.avatarRingColors) || c.avatarRingColors.length < 1 || !c.avatarRingColors.every(isColor)
+    || new Set(c.avatarRingColors.map((v) => v.toLowerCase())).size !== c.avatarRingColors.length) {
+    problems.push('avatarRingColors must be a list of different #rrggbb colours');
+  }
+  for (const state of SKY_STATES) {
+    const stops = c.skyTheme[state];
+    if (!Array.isArray(stops) || stops.length < 2 || !stops.every(isColor)) {
+      problems.push(`skyTheme.${state} needs 2 or more #rrggbb colours`);
+    }
+  }
   if (problems.length) throw new Error(`Invalid config: ${problems.join('; ')}`);
   return c;
 }

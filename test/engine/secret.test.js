@@ -45,10 +45,18 @@ describe('Secret Market', () => {
       const round = currentRound(game);
       if (r === 2) expect(round.secret.length).toBeGreaterThan(0);
       else expect(round.secret).toEqual([]);
-      const expected = r === 2 ? round.secret : [];
-      for (const view of everyView(game)) expect(view.secretFruits).toEqual(expected);
+      // Curtains and ambience: only while round 2 is being played.
+      for (const view of everyView(game)) {
+        expect(view.curtained).toBe(r === 2);
+        expect(Array.isArray(view.ambient)).toBe(r === 2);
+      }
       submitAll(game);
-      for (const view of everyView(game)) expect(view.secretFruits).toEqual(expected);
+      for (const view of everyView(game)) {
+        expect(view.curtained).toBe(false);
+        expect(view.ambient).toBeNull();
+      }
+      const hidden = publicResults(game)[r - 1].fruits.filter((entry) => entry.secret);
+      expect(hidden).toHaveLength(r === 2 ? round.secret.length : 0);
       if (r < 4) nextRound(game, T0);
     }
   });
@@ -91,25 +99,78 @@ describe('Secret Market', () => {
     expect(currentRound(game).secret).toEqual([crowded]);
   });
 
-  it('is announced to everyone when round 2 opens, before any bid', () => {
-    const game = started(12);
-    advanceTo(game, 2);
+  // Nothing a client receives may say which fruits are secret, or how many,
+  // until round 2 has resolved. The ambient sequence is the one exception,
+  // and it holds only emojis and timing.
+  function expectSecretsHidden(game) {
+    for (const view of everyView(game)) {
+      for (const key of allKeys(view)) expect(key, `${view.role} view has "${key}"`).not.toMatch(/secret/i);
+      const { ambient, ...rest } = view;
+      for (const item of ambient ?? []) expect(Object.keys(item).sort()).toEqual(['delay', 'duration', 'emoji']);
+      if (view.role !== 'host') {
+        for (const round of rest.results) expect(round.round).toBeLessThan(game.config.secretRound);
+      }
+      // Identical for every recipient: no view is shaped by the secret list.
+      expect(view.curtained).toBe(everyView(game)[0].curtained);
+    }
+    const keys = allKeys(publicConfig(game));
+    for (const key of keys) expect(key).not.toMatch(/secret|weight/i);
+  }
+
+  it('never sends the secret list to anyone before round 2 resolves', () => {
+    const game = started(16, { seed: 9 });
+    expectSecretsHidden(game); // round 1 bidding
+    submitAll(game);
+    expectSecretsHidden(game); // round 1 results
+    nextRound(game, T0);
+
     const round = currentRound(game);
-    expect(round.selections).toEqual({});
-    expect(round.submitted).toEqual({});
+    expect(round.secret.length).toBeGreaterThan(0);
+    expectSecretsHidden(game); // round 2 opens
+    const [a, b] = game.players;
+    select(game, a.id, 2, 3, NOW);
+    change(game, b.id, 2, round.secret.find((fruit) => fruit !== b.fruit), NOW);
+    submit(game, b.id, 2, 4, NOW);
+    expectSecretsHidden(game); // mid round 2, after a Change into a secret fruit
+
+    // A view never differs by whether the recipient's own fruit is secret.
+    const shapes = game.players.map((p) => Object.keys(playerView(game, p.id, NOW)).sort().join());
+    expect(new Set(shapes).size).toBe(1);
+    const flat = (view) => JSON.stringify({ ...view, me: null, teammate: null, rivals: null, changeTargets: null });
+    expect(new Set(game.players.map((p) => flat(playerView(game, p.id, NOW)))).size).toBe(1);
+  });
+
+  it('curtains every stand in round 2, then keeps only the secret fruits hidden', () => {
+    const game = started(12, { seed: 3 });
+    advanceTo(game, 2);
     for (const view of everyView(game)) {
       expect(view.round).toBe(2);
-      expect(view.bidsIn).toBe(0);
-      expect(view.secretFruits).toEqual(round.secret);
+      expect(view.curtained).toBe(true);
     }
+    submitAll(game, () => 4);
+    const { secret } = game.rounds[1];
+    for (const view of [playerView(game, game.players[0].id, NOW), screenView(game, NOW)]) {
+      expect(view.curtained).toBe(false);
+      const shown = view.results.find((entry) => entry.round === 2);
+      for (const entry of shown.fruits) {
+        expect(entry.secret).toBe(secret.includes(entry.fruit));
+        expect(entry.price).toBe(entry.secret ? null : 4);
+      }
+    }
+    // The host still gets no results at all.
+    expect(hostView(game, NOW).results).toBeUndefined();
   });
 
   it('is not hinted at before round 2', () => {
     const game = started(12);
-    for (const view of everyView(game)) expect(view.secretFruits).toEqual([]);
+    for (const view of everyView(game)) {
+      expect(view.curtained).toBe(false);
+      expect(view.ambient).toBeNull();
+    }
     const keys = allKeys(publicConfig(game));
     expect(keys.has('secretRound')).toBe(false);
     expect(keys.has('secretShare')).toBe(false);
+    expect(keys.has('ambientSecretWeight')).toBe(false);
   });
 
   it('scores secret fruits exactly like any other fruit', () => {
@@ -186,7 +247,7 @@ describe('Secret Market', () => {
     for (const view of everyView(game)) {
       expect(view.status).toBe('final');
       expect(view.standings).toHaveLength(16);
-      expect(Object.keys(view.standings[0]).sort()).toEqual(['avatar', 'id', 'name', 'rank', 'total']);
+      expect(Object.keys(view.standings[0]).sort()).toEqual(['avatar', 'id', 'name', 'rank', 'ring', 'total']);
       expect(view.standings[0].total).toMatch(/^\d+\.\d{2}$/);
     }
   });
@@ -202,7 +263,7 @@ describe('Secret Market', () => {
 });
 
 describe('privacy', () => {
-  it('results payloads contain only fruit, secret flag and lowest price', () => {
+  it('results payloads contain only fruit and lowest price, plus the secret flag for round 2', () => {
     const game = started(10);
     advanceTo(game, 3);
     const results = publicResults(game);
@@ -210,7 +271,8 @@ describe('privacy', () => {
     for (const round of results) {
       expect(Object.keys(round).sort()).toEqual(['fruits', 'phase', 'round']);
       expect(round.fruits).toHaveLength(game.activeFruits.length);
-      for (const entry of round.fruits) expect(Object.keys(entry).sort()).toEqual(['fruit', 'price', 'secret']);
+      const keys = round.round === 2 ? ['fruit', 'price', 'secret'] : ['fruit', 'price'];
+      for (const entry of round.fruits) expect(Object.keys(entry).sort()).toEqual(keys);
     }
     const names = game.players.map((p) => p.name);
     const text = JSON.stringify(results);
@@ -222,7 +284,7 @@ describe('privacy', () => {
     const [emptied, crowded] = game.activeFruits;
     for (const p of sellers(game)[emptied]) change(game, p.id, 1, crowded, NOW);
     submitAll(game, () => 3);
-    expect(publicResults(game)[0].fruits).toEqual([{ fruit: crowded, secret: false, price: 3 }]);
+    expect(publicResults(game)[0].fruits).toEqual([{ fruit: crowded, price: 3 }]);
   });
 
   it("a player's view holds only their own selection", () => {
@@ -247,7 +309,7 @@ describe('privacy', () => {
     expect(view.players.find((p) => p.id === a.id).submitted).toBe(false);
     expect(view.players.find((p) => p.id === b.id).submitted).toBe(true);
     for (const player of view.players) {
-      expect(Object.keys(player).sort()).toEqual(['avatar', 'fruit', 'id', 'name', 'rejoinCode', 'submitted']);
+      expect(Object.keys(player).sort()).toEqual(['avatar', 'fruit', 'id', 'name', 'rejoinCode', 'ring', 'submitted']);
     }
     advanceTo(game, 4);
     submitAll(game);

@@ -24,19 +24,29 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
 
   // ---------- sending ----------
 
+  // The round 2 ambient sequence is long and never changes during the
+  // round, so each connection gets it once; later updates leave it out.
+  function ambientOnce(socket, room, view) {
+    if (!view.ambient) return view;
+    const source = engine.currentRound(room.state).ambient;
+    if (socket.data.ambientSent === source) delete view.ambient;
+    else socket.data.ambientSent = source;
+    return view;
+  }
+
   function sendState(socket, room) {
     const { role, playerId } = socket.data;
     if (role === 'player') {
       const view = playerView(room.state, playerId, now());
-      if (view) socket.emit('state', view);
+      if (view) socket.emit('state', ambientOnce(socket, room, view));
       else leave(socket, { reason: 'gone', message: 'Your seat is no longer in this game.' });
     } else if (role === 'screen') {
-      socket.emit('state', screenView(room.state, now()));
+      socket.emit('state', ambientOnce(socket, room, screenView(room.state, now())));
     } else if (role === 'host') {
       const view = hostView(room.state, now());
       const online = new Set([...room.sockets].map((s) => s.data.playerId));
       view.players = view.players.map((p) => ({ ...p, connected: online.has(p.id) }));
-      socket.emit('state', view);
+      socket.emit('state', ambientOnce(socket, room, view));
     }
   }
 
@@ -90,6 +100,7 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
     socket.data.code = null;
     socket.data.role = null;
     socket.data.playerId = null;
+    socket.data.ambientSent = null;
     if (room && wasPlayer) notifyHosts(room);
   }
 
@@ -152,7 +163,7 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
   // ---------- connections ----------
 
   io.on('connection', (socket) => {
-    socket.data = { isHost: false, code: null, role: null, playerId: null };
+    socket.data = { isHost: false, code: null, role: null, playerId: null, ambientSent: null };
 
     socket.on('disconnect', () => detach(socket));
 
@@ -162,7 +173,9 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
       const room = store.get(code);
       if (!room) return NO_ROOM;
       const result = engine.checkJoinable(room.state);
-      return result.ok ? { ok: true, code: room.code, avatars: room.state.config.avatars } : brief(result);
+      return result.ok
+        ? { ok: true, code: room.code, avatars: room.state.config.avatars, skyTheme: room.state.config.skyTheme }
+        : brief(result);
     });
 
     on(socket, 'room:checkName', ({ code, name }) => {

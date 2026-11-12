@@ -20,9 +20,18 @@
   --awning-4: #d9527f;
   --awning-5: #e0a514;
 
+  /* Text that sits straight on the sky. js/scene.js flips data-sky. */
+  --on-sky: var(--ink);
+  --soft: var(--ink-soft);
+
   --radius: 16px;
   --shadow: 0 4px 0 rgba(58, 40, 26, 0.16);
   --font: ui-rounded, 'Nunito', 'Baloo 2', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-sky='dark'] {
+  --on-sky: #fff4dd;
+  --soft: #d9cdea;
 }
 
 * { box-sizing: border-box; }
@@ -34,9 +43,7 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--cream);
-  background-image: radial-gradient(rgba(192, 138, 79, 0.13) 2px, transparent 2.5px);
-  background-size: 26px 26px;
-  color: var(--ink);
+  color: var(--on-sky);
   font-family: var(--font);
   font-size: 18px;
   line-height: 1.35;
@@ -47,7 +54,30 @@ h1, h2, h3, p { margin: 0; }
 h1, h2, h3 { line-height: 1.1; font-weight: 900; letter-spacing: -0.01em; }
 [hidden] { display: none !important; }
 
-.muted { color: var(--ink-soft); }
+.muted { color: var(--soft); }
+
+/* Solid cream panels always use dark ink, whatever the sky is doing. */
+.card, .toast, .sheet__panel, .person, .rest__row, .board li, .receipt {
+  --soft: var(--ink-soft);
+}
+
+/* ---------- avatars: an animal in a colour ring ---------- */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75em;
+  height: 1.75em;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 0.17em solid var(--ring, var(--sun));
+  box-shadow: 0 0 0 0.05em rgba(58, 40, 26, 0.35);
+  line-height: 1;
+  vertical-align: middle;
+}
+.avatar > span { font-size: 1em; line-height: 1; }
 .center { text-align: center; }
 
 /* ---------- buttons and inputs ---------- */
@@ -99,6 +129,7 @@ h1, h2, h3 { line-height: 1.1; font-weight: 900; letter-spacing: -0.01em; }
 
 .card {
   background: var(--paper);
+  color: var(--ink);
   border: 2px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -249,8 +280,6 @@ h1, h2, h3 { line-height: 1.1; font-weight: 900; letter-spacing: -0.01em; }
   border-radius: 50%;
   background: var(--ink);
 }
-.stand__tag--secret { font-size: 1.05em; background: #5b3d8a; color: #fff; border-color: #33205a; padding-left: 0.5em; }
-.stand__tag--secret::before { display: none; }
 .stand__tag--locked { background: var(--leaf); color: #fff; border-color: var(--leaf-dark); }
 .stand__note {
   position: absolute;
@@ -265,19 +294,18 @@ h1, h2, h3 { line-height: 1.1; font-weight: 900; letter-spacing: -0.01em; }
 }
 .stand.is-dim .stand__fruit { opacity: 0.3; }
 
-/* The cloth that hides a secret stand. It drops from behind the awning. */
+/* The curtain that closes a stand. It drops from behind the awning. */
 .stand__cloth {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: repeating-linear-gradient(135deg, #5b3d8a 0 0.7em, #6c4aa3 0.7em 1.4em);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background:
+    linear-gradient(transparent 0 86%, rgba(0, 0, 0, 0.22) 86% 89%, transparent 89%),
+    repeating-linear-gradient(90deg, #8a3a52 0 0.5em, #a2475f 0.5em 0.85em, #74304a 0.85em 1.25em);
+  box-shadow: inset 0 0.5em 0.5em rgba(0, 0, 0, 0.22);
   transform: translateY(-105%);
   transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1);
 }
-.stand__cloth span { font-size: 3em; }
 .stand.is-covered .stand__cloth { transform: translateY(0); }
 
 /* ---------- animation ---------- */

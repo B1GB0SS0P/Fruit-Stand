@@ -25,7 +25,7 @@ export function scoreRound(fruitOf, bids) {
 export function computeStandings(state) {
   const byId = Object.fromEntries(state.players.map((p) => [p.id, p]));
   const rows = Object.fromEntries(
-    state.players.map((p) => [p.id, { id: p.id, name: p.name, avatar: p.avatar, shares: {}, partners: {} }]),
+    state.players.map((p) => [p.id, { id: p.id, name: p.name, avatar: p.avatar, ring: p.ring, shares: {}, partners: {}, teamTotals: {} }]),
   );
 
   for (const [phase, pairs] of Object.entries(state.teams)) {
@@ -38,6 +38,7 @@ export function computeStandings(state) {
       const half = div(sum, 2);
       for (const id of pair) {
         rows[id].shares[phase] = half;
+        rows[id].teamTotals[phase] = sum;
         rows[id].partners[phase] = byId[pair.find((other) => other !== id)]?.name ?? '';
       }
     }

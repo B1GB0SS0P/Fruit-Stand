@@ -148,8 +148,11 @@ describe('Change token', () => {
     advanceTo(game, 2);
     const secret = game.rounds[1].secret[0];
     const p = game.players.find((player) => player.fruit !== secret);
-    expect(playerView(game, p.id, NOW).secretFruits).toContain(secret);
-    expect(playerView(game, p.id, NOW).changeTargets).toContain(secret);
+    const view = playerView(game, p.id, NOW);
+    expect(view.changeTargets).toContain(secret);
+    // Plain fruit ids: nothing marks a target as secret.
+    expect(view.changeTargets.every((target) => typeof target === 'string')).toBe(true);
+    expect(view.changeTargets.sort()).toEqual(game.activeFruits.filter((f) => f !== p.fruit).sort());
     expect(change(game, p.id, 2, secret, NOW).ok).toBe(true);
     expect(p.fruit).toBe(secret);
   });

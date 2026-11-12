@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { startServer, startGame, submitAll, FakeClock, PASSWORD } from './helpers.js';
+import { startServer, startGame, submitAll, ambientOf, FakeClock, PASSWORD } from './helpers.js';
 
 const open = [];
 const track = (t) => {
@@ -85,8 +85,9 @@ describe('snapshots', () => {
     expect(exported.ok).toBe(true);
     expect(exported.filename).toBe(`fruit-stand-${a.code}-snapshot.json`);
     await a.settle();
-    const secretFruits = b1.socket.state.secretFruits;
-    expect(secretFruits.length).toBe(1);
+    const ambient = ambientOf(b1.socket);
+    expect(ambient.length).toBeGreaterThan(0);
+    expect(b1.socket.state.curtained).toBe(true);
     const before = Object.fromEntries(a.bots.map((bot) => [bot.name, bot.socket.state]));
     const stateBefore = structuredClone(a.room.state);
     await a.close(); // the server "restarts"
@@ -121,12 +122,14 @@ describe('snapshots', () => {
     for (const bot of a.bots) {
       const view = phones[bot.name].state;
       expect(view.timer).toEqual({ remainingMs: 200_000, running: false, serverNow: b.clock.now() });
-      expect({ ...view, timer: null }).toEqual({ ...before[bot.name], timer: null });
+      // A fresh connection is sent the ambient sequence again.
+      expect(view.ambient).toEqual(ambient);
+      expect({ ...view, timer: null, ambient: null }).toEqual({ ...before[bot.name], timer: null, ambient: null });
     }
     expect(phones['Bot 1'].state.me).toMatchObject({ selection: 3, submitted: false });
     expect(phones['Bot 2'].state.me).toMatchObject({ selection: 4, submitted: true });
     expect(phones['Bot 3'].state.me).toMatchObject({ fruit: target, changeTokens: 0 });
-    expect(phones['Bot 1'].state.secretFruits).toEqual(secretFruits);
+    expect(ambientOf(phones['Bot 1'])).toEqual(ambient);
 
     const room = b.server.store.get(a.code);
     expect({ ...room.state, timer: null }).toEqual({ ...stateBefore, timer: null });

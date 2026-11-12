@@ -91,15 +91,17 @@ Each round (there are 4):
 9. You can use **+1 min**, **Pause**, **Remind** (nudges everyone who has not submitted) and **Set bid** (for someone who cannot use their phone).
 10. The projector shows each fruit's lowest price. Press **Start round N** to carry on. New partners are made at round 3.
 
-Round 2 is the Secret Market. Some fruits are announced as secret when the round opens, and their prices stay hidden until the end.
+Round 2 is the Secret Market. Nobody is told which fruits are secret, or how many, and that includes you: the host panel never shows it. The round opens with a teaser ("Some stands might close up shop… 👀") and a curtain on every stand. When the round ends, the curtains lift on the ordinary fruits and their prices show; the secret fruits stay curtained until the end.
+
+During round 2 only, faint fruit drifts across the background of the projector and the phones. It is a deliberate clue: secret fruits drift past about three times as often as the others. Don't mention it. Let the room work it out.
 
 After round 4:
 
-11. Press **Reveal secret prices**. The projector uncovers the secret stands one at a time.
-12. When the last one is uncovered, press **Show final standings**.
+11. Press **Reveal hidden prices**. The projector uncovers the secret stands one at a time.
+12. When the last one is uncovered, press **Show final standings**. The projector reveals 3rd, then 2nd, then 1st, then the full board. Each phone shows that player's own receipt and the standings.
 13. **Download results CSV** gives you every bid, every earning, which fruits were secret and the final totals.
 
-The host panel never shows a price, an earning or a total before the final standings, so you can join as a player on another device.
+The host panel never shows a price, an earning, a total or which fruits are secret before the final standings, so you can join as a player on another device.
 
 If a player loses their seat (they closed a private tab, or switched browser), press the 🔑 next to their name for a rejoin code. On their phone they enter the room code, then that rejoin code. A normal refresh or a locked phone reconnects by itself.
 
@@ -123,7 +125,20 @@ Snapshots are encrypted with the host password, because they contain every bid. 
 ## Change the settings
 
 - `config.js` has the fruit list, the avatars and every rule setting: sellers per fruit, price range, number of rounds, the Secret Market round and share, Change tokens, the bid timer, and the player limit (0 means no limit).
-- `content/howToPlay.json` has the How to Play slide text and the Secret Market intro. Edit the wording there; no code changes are needed.
+- `config.js` also has the look:
+  - `skyTheme`: the sky colours for the lobby, each round and the final standings, top to bottom. Change one state and the rest keep their defaults.
+  - `avatarRingColors`: the ring colours. Each player gets the first one that is free for their animal, so no two players look the same.
+  - `ambientSecretWeight` (default 3): how much more often a secret fruit drifts past in round 2. Set it to 1 to remove the clue.
+  - `ambientCountProjector` (10) and `ambientCountPhone` (5): how many fruits drift on screen at once. 0 turns the drifting fruit off.
+- `content/howToPlay.json` has the How to Play slide text, the round 2 teaser and the round 2 results line. Edit the wording there; no code changes are needed.
+
+## Preview the screens
+
+```
+npm run preview
+```
+
+This plays two real games with bots (4 and 40 players) and saves screenshots of the projector and a phone at the lobby, round 2, round 4 and the final standings into `preview/`. It needs Chrome or Edge installed. `npm run preview -- 12` uses another player count.
 
 With more than 40 players the 20 fruits get three or more sellers each, so the "one rival" line on slide 2 is no longer exact.
 

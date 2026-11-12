@@ -41,6 +41,31 @@ describe('joining', () => {
     expect(join(game, 'B').ok).toBe(true);
   });
 
+  it('gives 40 players who pick the same animal 40 different looks', () => {
+    const game = createGame({ code: 'A', seed: 1 });
+    for (let i = 0; i < 40; i++) expect(join(game, `Panda ${i}`, { avatar: '🐼' }).ok).toBe(true);
+    const looks = game.players.map((p) => `${p.avatar} ${p.ring}`);
+    expect(new Set(looks).size).toBe(40);
+    for (const p of game.players) expect(p.ring).toMatch(/^#[0-9a-f]{6}$/);
+    // The first players get the colours from the config list, in order.
+    const listed = game.config.avatarRingColors;
+    expect(game.players.slice(0, listed.length).map((p) => p.ring)).toEqual(listed);
+  });
+
+  it('assigns the first free colour for each animal, and frees it when a player is removed', () => {
+    const game = createGame({ code: 'A', seed: 1 });
+    const [first, second] = game.config.avatarRingColors;
+    join(game, 'A', { avatar: '🐼' });
+    join(game, 'B', { avatar: '🦊' });
+    join(game, 'C', { avatar: '🐼' });
+    expect(game.players.map((p) => p.ring)).toEqual([first, first, second]);
+    removePlayer(game, game.players[0].id);
+    join(game, 'D', { avatar: '🐼' });
+    expect(game.players.find((p) => p.name === 'D').ring).toBe(first);
+    const looks = game.players.map((p) => `${p.avatar} ${p.ring}`);
+    expect(new Set(looks).size).toBe(looks.length);
+  });
+
   it('refuses joins while the lobby is locked', () => {
     const game = lobby(2);
     setLocked(game, true);

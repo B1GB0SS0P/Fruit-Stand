@@ -123,6 +123,17 @@ export async function submitAll(t, priceOf = () => 5) {
   await t.settle();
 }
 
+// The round 2 ambient sequence a client holds. The server sends it once,
+// with the first update of the round, so look back through the log.
+export function ambientOf(client) {
+  const states = client.log.filter((entry) => entry.event === 'state').map((entry) => entry.payload);
+  for (let i = states.length - 1; i >= 0; i--) {
+    if (!states[i].curtained) return null;
+    if (states[i].ambient) return states[i].ambient;
+  }
+  return null;
+}
+
 export function allKeys(value, found = new Set()) {
   if (Array.isArray(value)) value.forEach((item) => allKeys(item, found));
   else if (value && typeof value === 'object') {

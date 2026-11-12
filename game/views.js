@@ -1,11 +1,14 @@
 // What each recipient is allowed to see. Nothing leaves the engine except
 // through these functions, so this file is the privacy boundary:
 //   - nobody receives another player's selection or any earnings mid-game;
+//   - which fruits are secret is withheld until the secret round resolves
+//     (the ambient sequence, emojis and timing only, is the one hint);
 //   - secret fruits' prices are withheld until the end reveal;
 //   - the host view carries no prices at all (it does show who sells what).
 
 import { currentRound, findPlayer, teammateOf, changeTargetsFor, timeLeft, startCheck } from './engine.js';
 import { computeStandings } from './scoring.js';
+import { toMoney, ZERO } from './frac.js';
 
 const secretsRevealed = (state) => state.status === 'reveal' || state.status === 'final';
 
@@ -19,10 +22,16 @@ export function publicConfig(state) {
     maxPrice: c.maxPrice,
     totalRounds: c.totalRounds,
     bidSeconds: c.bidSeconds,
+    ambientCountProjector: c.ambientCountProjector,
+    ambientCountPhone: c.ambientCountPhone,
+    skyTheme: c.skyTheme,
   };
 }
 
 // Each resolved round's lowest price per sold fruit. No names, no earnings.
+// Only the secret round's entries carry a `secret` flag, and a round only
+// appears here once it has resolved, so nothing labels a fruit as secret
+// (or as not secret) before then.
 export function publicResults(state) {
   const poolOrder = state.config.fruits.map((f) => f.id);
   const order = [...state.activeFruits, ...poolOrder.filter((id) => !state.activeFruits.includes(id))];
@@ -35,8 +44,10 @@ export function publicResults(state) {
       fruits: order
         .filter((fruit) => round.results[fruit])
         .map((fruit) => {
+          const { lowest } = round.results[fruit];
+          if (!round.secret.length) return { fruit, price: lowest };
           const secret = round.secret.includes(fruit);
-          return { fruit, secret, price: secret && !revealed ? null : round.results[fruit].lowest };
+          return { fruit, secret, price: secret && !revealed ? null : lowest };
         }),
     }));
 }
@@ -48,8 +59,35 @@ function standingsView(state) {
     rank: row.rank,
     name: row.name,
     avatar: row.avatar,
+    ring: row.ring,
     total: row.totalText,
   }));
+}
+
+// One player's own receipt: what they earned each round, half of each
+// team's total, and where they finished. Only at the final standings, and
+// only ever sent to that player.
+function receiptView(state, playerId) {
+  if (state.status !== 'final') return null;
+  const standings = computeStandings(state);
+  const row = standings.find((entry) => entry.id === playerId);
+  if (!row) return null;
+  return {
+    lines: state.rounds.filter((round) => round.resolved).map((round) => ({
+      round: round.n,
+      earned: toMoney(round.earnings[playerId] || ZERO),
+    })),
+    shares: Object.keys(row.shares).sort().map((phase) => ({
+      phase: Number(phase),
+      partner: row.partners[phase],
+      teamTotal: toMoney(row.teamTotals[phase]),
+      half: toMoney(row.shares[phase]),
+    })),
+    total: row.totalText,
+    rank: row.rank,
+    tied: standings.filter((entry) => entry.rank === row.rank).length > 1,
+    of: standings.length,
+  };
 }
 
 function timerView(state, now) {
@@ -62,7 +100,7 @@ function timerView(state, now) {
 
 function shared(state, now) {
   const round = currentRound(state);
-  const live = state.status === 'bidding' || state.status === 'results';
+  const secretRoundOpen = Boolean(round) && state.status === 'bidding' && round.n === state.config.secretRound;
   return {
     code: state.code,
     status: state.status,
@@ -73,10 +111,14 @@ function shared(state, now) {
     playerCount: state.players.length,
     bidsIn: round ? state.players.filter((p) => round.submitted[p.id]).length : 0,
     activeFruits: [...state.activeFruits],
-    // Only present during the secret round itself.
-    secretFruits: round && live ? [...round.secret] : [],
-    announcements: state.announcements.map(({ id, round: n, name, avatar, from, to, text }) => ({
-      id, round: n, name, avatar, from, to, text,
+    // While the secret round is being played every stand is curtained, and
+    // the background fruit drifts past. Neither says which fruits are secret.
+    curtained: secretRoundOpen,
+    ambient: secretRoundOpen && round.ambient
+      ? round.ambient.map(({ emoji, delay, duration }) => ({ emoji, delay, duration }))
+      : null,
+    announcements: state.announcements.map(({ id, round: n, name, avatar, ring, from, to, text }) => ({
+      id, round: n, name, avatar, ring, from, to, text,
     })),
     standings: standingsView(state),
   };
@@ -96,14 +138,16 @@ export function playerView(state, playerId, now) {
       id: player.id,
       name: player.name,
       avatar: player.avatar,
+      ring: player.ring,
       fruit: player.fruit,
       changeTokens: player.tokens,
       selection: round ? round.selections[player.id] ?? null : null,
       submitted: round ? Boolean(round.submitted[player.id]) : false,
     },
-    teammate: mate ? { name: mate.name, avatar: mate.avatar, fruit: mate.fruit } : null,
+    teammate: mate ? { name: mate.name, avatar: mate.avatar, ring: mate.ring, fruit: mate.fruit } : null,
     rivals: inGame ? state.players.filter((p) => p.id !== player.id && p.fruit === player.fruit).length : 0,
     changeTargets: inGame ? changeTargetsFor(state, player) : [],
+    receipt: receiptView(state, player.id),
   };
 }
 
@@ -112,7 +156,7 @@ export function screenView(state, now) {
     role: 'screen',
     ...shared(state, now),
     results: publicResults(state),
-    players: state.status === 'lobby' ? state.players.map((p) => ({ name: p.name, avatar: p.avatar })) : [],
+    players: state.status === 'lobby' ? state.players.map((p) => ({ name: p.name, avatar: p.avatar, ring: p.ring })) : [],
   };
 }
 
@@ -131,6 +175,7 @@ export function hostView(state, now) {
       id: p.id,
       name: p.name,
       avatar: p.avatar,
+      ring: p.ring,
       rejoinCode: p.rejoinCode,
       fruit: p.fruit,
       submitted: round ? Boolean(round.submitted[p.id]) : false,

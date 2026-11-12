@@ -1,0 +1,209 @@
+/* The market backdrop: sky, sun, skyline, bunting, string lights, ground,
+   the round 2 drifting fruit and the paper grain. Built by js/scene.js.
+   Movement is transforms and opacity only. */
+
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  --ground: 12vh;
+  --sun-size: 16vh;
+}
+.scene--phone { --ground: 34px; --sun-size: 84px; }
+
+/* Content sits above the backdrop. */
+.scene ~ main, .scene ~ .sheet { position: relative; z-index: 1; }
+.scene ~ .sheet { position: fixed; z-index: 50; }
+
+/* ---------- sky: two layers that cross-fade ---------- */
+
+.scene__sky {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+.scene__sky.is-on { opacity: 1; }
+
+/* ---------- sun (and, at dusk, the moon) ---------- */
+
+.scene__sun {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--sun-size);
+  height: var(--sun-size);
+  margin: calc(var(--sun-size) / -2) 0 0 calc(var(--sun-size) / -2);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff6c9 0 34%, rgba(255, 233, 150, 0.55) 36% 52%, rgba(255, 233, 150, 0) 70%);
+  opacity: 0.9;
+  transform: translate(14vw, 78vh);
+  transition: transform 3s ease, opacity 3s ease;
+}
+.scene[data-scene='lobby'] .scene__sun { transform: translate(12vw, 84vh) scale(1.1); opacity: 0.55; }
+.scene[data-scene='round1'] .scene__sun { transform: translate(13vw, 58vh); }
+.scene[data-scene='round2'] .scene__sun { transform: translate(50vw, 13vh) scale(1.15); opacity: 0.8; }
+.scene[data-scene='round3'] .scene__sun { transform: translate(82vw, 34vh) scale(1.2); }
+.scene[data-scene='round4'] .scene__sun { transform: translate(88vw, 70vh) scale(1.5); opacity: 0.85; }
+.scene[data-scene='final'] .scene__sun { transform: translate(88vw, 16vh) scale(0.5); opacity: 0.75; }
+
+/* ---------- skyline (projector only) ---------- */
+
+.scene__skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--ground);
+  width: 100%;
+  height: 20vh;
+  fill: var(--skyline, #d9c7a8);
+  transition: fill 3s ease;
+}
+
+/* ---------- ground: wooden planks ---------- */
+
+.scene__ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ground);
+  background:
+    linear-gradient(rgba(58, 40, 26, 0.35) 0 6%, transparent 6% 100%),
+    repeating-linear-gradient(90deg, transparent 0 13.6vw, rgba(58, 40, 26, 0.3) 13.6vw 13.9vw),
+    repeating-linear-gradient(180deg, #c08a4f 0 31%, #a87440 31% 33.3%);
+  box-shadow: 0 -0.5vh 0 rgba(255, 255, 255, 0.14) inset;
+}
+.scene--phone .scene__ground {
+  background:
+    linear-gradient(rgba(58, 40, 26, 0.35) 0 4px, transparent 4px 100%),
+    repeating-linear-gradient(90deg, transparent 0 78px, rgba(58, 40, 26, 0.3) 78px 80px),
+    repeating-linear-gradient(180deg, #c08a4f 0 15px, #a87440 15px 17px);
+}
+/* The planks darken with the evening. */
+.scene__ground::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #1b1440;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+.scene[data-scene='round4'] .scene__ground::after { opacity: 0.18; }
+.scene[data-scene='final'] .scene__ground::after { opacity: 0.5; }
+
+/* ---------- bunting ---------- */
+
+.scene__bunting, .scene__lights {
+  position: absolute;
+  left: -1vw;
+  right: -1vw;
+  top: 0;
+  display: flex;
+}
+.scene__bunting { height: 6.4vh; }
+.scene--phone .scene__bunting { height: 30px; }
+.bunting__swag {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  transform-origin: 50% 0;
+  animation: bunting-sway 7s ease-in-out infinite alternate;
+}
+.bunting__swag:nth-child(even) { animation-duration: 9s; animation-delay: -3s; }
+@keyframes bunting-sway {
+  0% { transform: rotate(-0.5deg) scaleY(0.96); }
+  100% { transform: rotate(0.5deg) scaleY(1.05); }
+}
+
+/* ---------- string lights: off by day, glowing by evening ---------- */
+
+.scene__lights { top: 4.6vh; height: 5vh; opacity: 0; transition: opacity 3s ease; }
+.scene--phone .scene__lights { top: 22px; height: 24px; }
+.lights__strand { flex: 1; min-width: 0; height: 100%; overflow: visible; }
+.lights__bulb { fill: #fff3b8; }
+.lights__glow { fill: #ffd76a; opacity: 0.35; }
+.scene[data-scene='round4'] .scene__lights { opacity: 0.6; }
+.scene[data-scene='final'] .scene__lights { opacity: 1; }
+.scene[data-scene='final'] .lights__glow { animation: twinkle 2.6s ease-in-out infinite alternate; }
+.scene[data-scene='final'] .lights__glow.is-odd { animation-delay: -1.3s; }
+@keyframes twinkle {
+  0% { opacity: 0.25; }
+  100% { opacity: 0.7; }
+}
+
+/* ---------- round 2: drifting fruit ---------- */
+
+.scene__ambient { position: absolute; inset: 0; opacity: 0; transition: opacity 2.4s ease; }
+.scene__ambient.is-on { opacity: 1; }
+.drift {
+  position: absolute;
+  left: 0;
+  top: 0;
+  line-height: 1;
+  filter: saturate(0.6) blur(0.6px);
+  will-change: transform;
+  animation: drift linear 30s both;
+}
+.drift__sway { display: block; animation: sway ease-in-out 7s infinite alternate; }
+@keyframes drift {
+  0% { transform: translate(var(--x0), var(--y0)); }
+  100% { transform: translate(var(--x1), var(--y1)); }
+}
+@keyframes sway {
+  0% { transform: translateX(calc(var(--sway) * -1)) rotate(calc(var(--turn) * -1)); }
+  100% { transform: translateX(var(--sway)) rotate(var(--turn)); }
+}
+.drift--still, .drift--still .drift__sway { animation: none; }
+
+/* ---------- paper grain over everything ---------- */
+
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 0.07;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.14 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* ---------- chalkboard sign ---------- */
+
+.chalk-sign {
+  display: inline-block;
+  position: relative;
+  padding: 0.35em 0.9em;
+  background: var(--chalk);
+  color: #f4f1e4;
+  border: 0.18em solid var(--wood);
+  border-radius: 0.3em;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow: 0 0.2em 0 rgba(58, 40, 26, 0.3);
+  transform: rotate(-2deg);
+}
+.chalk-sign::before, .chalk-sign::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  width: 0.1em;
+  height: 0.9em;
+  background: rgba(58, 40, 26, 0.6);
+}
+.chalk-sign::before { left: 18%; }
+.chalk-sign::after { right: 18%; }
+
+/* ---------- motion settings ---------- */
+
+/* Nothing moves while the tab is in the background. */
+.is-hidden *, .is-hidden *::before, .is-hidden *::after { animation-play-state: paused !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scene__sky, .scene__sun, .scene__skyline, .scene__lights, .scene__ground::after { transition: none; }
+  .bunting__swag, .lights__glow, .drift, .drift__sway { animation: none !important; }
+}

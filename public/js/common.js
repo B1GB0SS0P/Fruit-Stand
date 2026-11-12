@@ -138,7 +138,7 @@ export function fruitLookup(config) {
 
 // One little fruit stand. Sized in em, so the container's font-size scales it.
 //   tag: text for the price tag, or null
-//   covered: draw the secret cloth over the stand
+//   covered: draw the curtain over the stand
 export function makeStand(fruit, { tag = null, covered = false, tagClass = '', dim = false, note = null } = {}) {
   return h('div', {
     class: `stand${covered ? ' is-covered' : ''}${dim ? ' is-dim' : ''}`,
@@ -148,12 +148,23 @@ export function makeStand(fruit, { tag = null, covered = false, tagClass = '', d
     h('div', { class: 'stand__awning' }),
     h('div', { class: 'stand__window' },
       h('div', { class: 'stand__fruit' }, fruit.emoji),
-      h('div', { class: 'stand__cloth' }, h('span', null, '🙈')),
+      h('div', { class: 'stand__cloth' }),
     ),
     h('div', { class: 'stand__counter' }, fruit.name),
     tag ? h('div', { class: `stand__tag ${tagClass}` }, tag) : null,
     note ? h('div', { class: 'stand__note' }, note) : null,
   );
+}
+
+// An animal in its colour ring. Sized by the container's font-size.
+export function avatarEl(emoji, ring, extraClass = '') {
+  return h('span', { class: `avatar ${extraClass}`.trim(), style: ring ? `--ring:${ring}` : null }, h('span', null, emoji));
+}
+
+// Rank as shown on the standings: tied players get "T-2".
+export function rankLabel(row, rows) {
+  const tied = rows.filter((other) => other.rank === row.rank).length > 1;
+  return tied ? `T-${row.rank}` : `#${row.rank}`;
 }
 
 export const prefersReducedMotion = () =>

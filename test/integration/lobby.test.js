@@ -148,10 +148,11 @@ describe('joining', () => {
     expect(bots[0].socket.state.me).toMatchObject({ name: 'Bot 1', avatar: '🐼' });
     expect(bots[0].socket.state.players).toBeUndefined();
     expect(screen.state.players).toEqual([
-      { name: 'Bot 1', avatar: '🐼' },
-      { name: 'Bot 2', avatar: '🐼' },
-      { name: 'Bot 3', avatar: '🐼' },
+      { name: 'Bot 1', avatar: '🐼', ring: '#e2552d' },
+      { name: 'Bot 2', avatar: '🐼', ring: '#2ba39b' },
+      { name: 'Bot 3', avatar: '🐼', ring: '#f7bb3d' },
     ]);
+    expect(bots.map((bot) => bot.socket.state.me.ring)).toEqual(['#e2552d', '#2ba39b', '#f7bb3d']);
     expect(host.state.players.map((p) => p.name)).toEqual(['Bot 1', 'Bot 2', 'Bot 3']);
     expect(host.state.players.every((p) => p.connected)).toBe(true);
     expect(bots[0].socket.log.some((entry) => entry.event === 'config')).toBe(true);

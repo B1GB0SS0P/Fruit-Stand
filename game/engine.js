@@ -8,6 +8,7 @@ import { resolveConfig } from '../config.js';
 import { seedFrom, sample } from './rng.js';
 import { makePairs, makePhase2Pairs, dealFruits, activeFruitCount } from './deal.js';
 import { scoreRound } from './scoring.js';
+import { ambientSequence } from './ambient.js';
 
 const ok = (extra = {}) => ({ ok: true, ...extra });
 const fail = (error, message) => ({ ok: false, error, message });
@@ -19,7 +20,7 @@ export function createGame({ code, seed = Date.now(), config = {} }) {
     rngState: seedFrom(seed),
     status: 'lobby', // lobby | bidding | results | reveal | final
     locked: false,
-    players: [], // { id, token, rejoinCode, name, avatar, fruit, tokens }
+    players: [], // { id, token, rejoinCode, name, avatar, ring, fruit, tokens }
     nextPlayerNumber: 1,
     revokedTokens: [],
     round: 0,
@@ -49,6 +50,37 @@ export function teammateOf(state, playerId, phase) {
 export function changeTargetsFor(state, player) {
   const pool = state.config.changeTargets === 'any' ? state.config.fruits.map((f) => f.id) : state.activeFruits;
   return pool.filter((fruit) => fruit !== player.fruit);
+}
+
+// ---------- avatars ----------
+
+// The first ring colour nobody else with this animal has. If the config list
+// runs out, further colours are made up, so every animal + ring pair in the
+// room stays unique however many players pick the same animal.
+export function freeRing(state, avatar) {
+  const listed = state.config.avatarRingColors.map((color) => color.toLowerCase());
+  const taken = new Set(state.players.filter((p) => p.avatar === avatar).map((p) => p.ring));
+  for (const ring of listed) {
+    if (!taken.has(ring)) return ring;
+  }
+  for (let i = 0; ; i++) {
+    const ring = spareRing(i);
+    if (!taken.has(ring) && !listed.includes(ring)) return ring;
+  }
+}
+
+// Evenly spread extra colours: the hue steps by the golden angle, and the
+// lightness cycles so near hues still differ.
+function spareRing(i) {
+  const hue = (i * 137.508 + 20) % 360;
+  const light = [0.42, 0.62, 0.52][i % 3];
+  const a = 0.7 * Math.min(light, 1 - light);
+  const channel = (n) => {
+    const k = (n + hue / 30) % 12;
+    const value = light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(value * 255).toString(16).padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(8)}${channel(4)}`;
 }
 
 // ---------- lobby ----------
@@ -92,6 +124,7 @@ export function addPlayer(state, { name, avatar, token, rejoinCode = null }) {
     rejoinCode,
     name: clean,
     avatar,
+    ring: freeRing(state, avatar),
     fruit: null,
     tokens: 0,
   };
@@ -191,18 +224,24 @@ function openRound(state, now) {
     state.teams[2] = makePhase2Pairs(state, ids, state.teams[1]).pairs;
   }
 
+  // The secret list and the ambient sequence built from it stay on the
+  // server. Only the sequence (emojis and timing) is ever sent out.
   let secret = [];
+  let ambient = null;
   if (n === config.secretRound) {
     const sold = new Set(state.players.map((p) => p.fruit));
     const candidates = state.activeFruits.filter((fruit) => sold.has(fruit));
     const wanted = Math.max(1, Math.floor(state.activeFruits.length * config.secretShare + 0.5));
     secret = sample(state, candidates, Math.min(wanted, candidates.length));
+    const inPlay = [...state.activeFruits, ...[...sold].filter((fruit) => !state.activeFruits.includes(fruit))];
+    ambient = ambientSequence(state, inPlay, secret, config);
   }
 
   state.rounds.push({
     n,
     phase,
     secret,
+    ambient, // [{ emoji, delay, duration }] in the secret round, else null
     selections: {}, // playerId -> price (latest pick)
     submitted: {}, // playerId -> true once locked in
     bidType: {}, // playerId -> submitted | host | auto_selected | auto_max

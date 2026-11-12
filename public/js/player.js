@@ -2,8 +2,9 @@
 
 import {
   $, h, toast, store, connect, call, watchConnection, Countdown, clockText,
-  fruitLookup, makeStand, loadContent, plural,
+  fruitLookup, makeStand, loadContent, plural, avatarEl, rankLabel,
 } from './common.js';
+import { mountScene, sceneFor } from './scene.js';
 
 const SEAT_KEY = 'fruitstand:seat';
 const app = $('#app');
@@ -15,13 +16,20 @@ let config = null;
 let fruitOf = () => null;
 let state = null;
 let seat = loadSeat(); // { code, token }
-let secretIntro = null;
+let teaser = 'Some stands might close up shop… 👀';
+let closedNote = 'Some stands stayed closed. Their prices stay hidden until the end — even from their sellers.';
+let skyTheme = null;
+let ambientItems = null; // round 2 background sequence
+const scene = mountScene('phone');
 let retryTimer = null;
 let lastSelection = null;
 let lastSubmitted = false;
 let seenAnnouncements = new Set();
 
-loadContent().then((content) => { secretIntro = content.secretIntro; }).catch(() => {});
+loadContent().then((content) => {
+  teaser = content.secretTeaser || teaser;
+  closedNote = content.secretResults || closedNote;
+}).catch(() => {});
 
 // ---------- seat storage ----------
 
@@ -58,6 +66,7 @@ socket.on('connect', () => {
 
 socket.on('config', (value) => {
   config = value;
+  skyTheme = config.skyTheme;
   fruitOf = fruitLookup(config);
 });
 
@@ -115,6 +124,12 @@ async function resume() {
 // ---------- join flow ----------
 
 function screen(...kids) {
+  // Outside a game (joining, paused) the market is back to early morning.
+  if (!state) {
+    ambientItems = null;
+    scene.ambient.stop();
+    if (skyTheme) scene.set('lobby', skyTheme);
+  }
   app.replaceChildren(...kids);
   window.scrollTo(0, 0);
 }
@@ -144,7 +159,11 @@ function showCodeStep(prefill = '', problem = '') {
       button.disabled = true;
       const reply = await call(socket, 'room:check', { code });
       button.disabled = false;
-      if (reply.ok) return showNameStep(reply.code, reply.avatars);
+      if (reply.ok) {
+        skyTheme = reply.skyTheme || skyTheme;
+        if (skyTheme) scene.set('lobby', skyTheme);
+        return showNameStep(reply.code, reply.avatars);
+      }
       fail(reply.message);
       if (reply.error === 'in_progress') showRejoin(code);
     },
@@ -281,12 +300,20 @@ const countdown = new Countdown((seconds, running) => {
 
 function render() {
   if (!state || !config) return;
+  scene.set(sceneFor(state), config.skyTheme);
+  // The sequence arrives once, with the first update of the round.
+  if (state.ambient) ambientItems = state.ambient;
+  else if (!state.curtained) ambientItems = null;
+  if (ambientItems) {
+    scene.ambient.start(ambientItems, config.ambientCountPhone, config.bidSeconds * 1000 - state.timer.remainingMs);
+  } else scene.ambient.stop();
   for (const a of state.announcements) seenAnnouncements.add(a.id);
   if (state.status !== 'bidding') closeSheet();
 
+  if (state.status !== 'final') finalShown = false;
   if (state.status === 'lobby') renderWaiting();
   else if (state.status === 'reveal') {
-    showMessage('👀', 'All eyes on the big screen', 'The secret prices are being revealed…');
+    showMessage('👀', 'All eyes on the big screen', 'The closed stands are opening up…');
   } else if (state.status === 'final') renderFinal();
   else renderRound();
 
@@ -298,8 +325,9 @@ function render() {
 function renderWaiting() {
   const { me } = state;
   app.replaceChildren(h('section', { class: 'waiting' },
+    h('div', { class: 'chalk-sign' }, 'Opening soon'),
     h('h1', null, "You're in!"),
-    h('div', { class: 'waiting__avatar anim-pop' }, me.avatar),
+    avatarEl(me.avatar, me.ring, 'waiting__avatar anim-pop'),
     h('div', { class: 'waiting__name' }, me.name),
     h('p', { class: 'waiting__count' }, `${plural(state.playerCount, 'player')} joined`),
     h('p', { class: 'muted' }, 'Waiting for the host to start. Keep this page open.'),
@@ -314,7 +342,7 @@ function resultList(round, mine) {
       h('span', { class: 'r-emoji' }, fruit.emoji),
       h('span', { class: 'r-name' }, fruit.name),
       entry.price === null
-        ? h('span', { class: 'r-price is-secret' }, '🙈 Secret')
+        ? h('span', { class: 'r-price is-closed' }, 'Closed')
         : h('span', { class: 'r-price' }, `$${entry.price}`),
     );
   }));
@@ -324,8 +352,9 @@ function renderRound() {
   const { me } = state;
   const bidding = state.status === 'bidding';
   const fruit = fruitOf(me.fruit);
-  const secretRound = state.secretFruits.length > 0;
-  const mineIsSecret = state.secretFruits.includes(me.fruit);
+  // In the secret round every stand is curtained, mine included, so the
+  // curtain says nothing about which fruits are secret.
+  const curtained = state.curtained;
   const parts = [];
 
   // Round, phase and the countdown.
@@ -338,15 +367,8 @@ function renderRound() {
   ));
   if (bidding) parts.push(h('p', { class: 'timer-hint', id: 'timer-hint', hidden: true }, `No price picked = $${config.maxPrice}`));
 
-  // Secret Market banner: round 2 only.
-  if (secretRound) {
-    parts.push(h('section', { class: 'secret-banner anim-slide' },
-      h('h3', null, secretIntro ? secretIntro.title : '🙈 Secret Market!'),
-      h('p', null, secretIntro ? secretIntro.text : ''),
-      h('div', { class: 'secret-banner__fruits' }, state.secretFruits.map((id) => fruitOf(id).emoji).join(' ')),
-      mineIsSecret ? h('p', null, h('strong', null, `Your ${fruit.name} stand is secret this round.`)) : null,
-    ));
-  }
+  // The teaser, while the secret round is being played.
+  if (curtained) parts.push(h('section', { class: 'teaser anim-slide' }, teaser));
 
   // My stand, with the current price stuck on it.
   let tag = null;
@@ -357,7 +379,7 @@ function renderRound() {
     const justPicked = me.selection !== lastSelection || me.submitted !== lastSubmitted;
     if (justPicked) tagClass += ' anim-slap';
   }
-  parts.push(h('div', { class: 'mystand' }, makeStand(fruit, { tag, tagClass, covered: mineIsSecret })));
+  parts.push(h('div', { class: 'mystand' }, makeStand(fruit, { tag, tagClass, covered: curtained })));
 
   // Teammate and rivals.
   const mate = state.teammate;
@@ -365,7 +387,7 @@ function renderRound() {
   parts.push(h('div', { class: 'facts' },
     h('div', { class: 'card fact' },
       h('div', { class: 'fact__label' }, 'Your partner'),
-      h('div', { class: 'fact__main' }, mate ? `${mate.avatar} ${mate.name}` : '—'),
+      h('div', { class: 'fact__main' }, mate ? [avatarEl(mate.avatar, mate.ring), ` ${mate.name}`] : '—'),
       h('div', { class: 'fact__sub' }, mate ? `sells ${mateFruit.emoji} ${mateFruit.name}` : ''),
     ),
     h('div', { class: 'card fact' },
@@ -419,8 +441,8 @@ function renderRound() {
       parts.push(h('section', { class: 'card panel anim-slide' },
         h('h3', null, `Round ${latest.round}: lowest prices`),
         resultList(latest, me.fruit),
-        latest.fruits.some((f) => f.price === null) && secretIntro
-          ? h('p', { class: 'muted', style: 'margin-top:8px' }, secretIntro.text) : null,
+        latest.fruits.some((f) => f.price === null)
+          ? h('p', { class: 'muted', style: 'margin-top:8px' }, closedNote) : null,
       ));
     }
   }
@@ -481,22 +503,20 @@ function openChangeSheet() {
   const mine = fruitOf(state.me.fruit);
   const grid = h('div', { class: 'fruit-grid' }, state.changeTargets.map((id) => {
     const fruit = fruitOf(id);
-    const secret = state.secretFruits.includes(id);
     return h('button', {
-      class: `fruit-pick${secret ? ' is-secret' : ''}`, type: 'button', onclick: () => confirmChange(mine, fruit, secret),
+      class: 'fruit-pick', type: 'button', onclick: () => confirmChange(mine, fruit),
     }, h('span', null, fruit.emoji), h('span', null, fruit.name));
   }));
   sheet.replaceChildren(h('div', { class: 'sheet__panel anim-slide' },
     h('h2', null, '🔄 Change your fruit'),
     h('p', null, `You sell ${mine.emoji} ${mine.name}. Pick a new fruit.`),
-    state.secretFruits.length ? h('p', { class: 'muted' }, '🙈 marks a secret fruit this round.') : null,
     grid,
     h('button', { class: 'btn btn--plain btn--wide', type: 'button', onclick: closeSheet }, 'Cancel'),
   ));
   sheet.hidden = false;
 }
 
-function confirmChange(from, to, secret) {
+function confirmChange(from, to) {
   const yes = h('button', { class: 'btn btn--warn', type: 'button' }, 'Yes, change');
   yes.addEventListener('click', async () => {
     yes.disabled = true;
@@ -510,7 +530,7 @@ function confirmChange(from, to, secret) {
     h('div', { class: 'swap' }, from.emoji, h('small', null, '→'), to.emoji),
     h('p', { class: 'center' }, h('strong', null, `Change ${from.name} → ${to.name}?`)),
     h('p', { class: 'center muted' },
-      `This uses your only Change token, it can't be undone, and everyone will be told.${secret ? ' This fruit is secret this round.' : ''}`),
+      "This uses your only Change token, it can't be undone, and everyone will be told."),
     h('div', { class: 'sheet__row' },
       h('button', { class: 'btn btn--plain', type: 'button', onclick: openChangeSheet }, 'Back'),
       yes,
@@ -524,22 +544,53 @@ sheet.addEventListener('click', (event) => {
 
 // ---------- final standings ----------
 
-function renderFinal() {
-  const mine = state.standings.find((row) => row.id === state.me.id);
-  app.replaceChildren(
-    h('section', { class: 'card myrank anim-pop' },
-      h('div', { class: 'myrank__avatar' }, state.me.avatar),
-      h('div', { class: 'myrank__place' }, mine ? `#${mine.rank}` : ''),
-      h('div', { class: 'myrank__total' }, mine ? `$${mine.total}` : ''),
-      h('p', { class: 'muted' }, `out of ${plural(state.standings.length, 'player')}`),
+let finalShown = false;
+
+const money = (text) => h('span', { class: 'receipt__price' }, `$${text}`);
+const receiptLine = (label, price, cls = '') =>
+  h('div', { class: `receipt__line ${cls}`.trim() }, h('span', { class: 'receipt__label' }, label), price);
+
+// A paper receipt from the player's own stand.
+function receipt() {
+  const { me, receipt: r } = state;
+  const place = r.tied ? `T-${r.rank}` : `#${r.rank}`;
+  return h('section', { class: `receipt${finalShown ? '' : ' anim-slide'}` },
+    h('div', { class: 'receipt__head' },
+      avatarEl(me.avatar, me.ring, 'receipt__avatar'),
+      h('div', { class: 'receipt__shop' }, `${me.name}'s stand`),
+      h('div', { class: 'receipt__sub' }, `Fruit Stand · Room ${state.code}`),
     ),
-    h('h2', { class: 'center' }, '🏆 Final standings'),
-    h('ol', { class: 'board' }, state.standings.map((row) =>
-      h('li', { class: row.id === state.me.id ? 'is-me' : '' },
-        h('span', { class: 'b-rank' }, `#${row.rank}`),
-        h('span', { class: 'b-avatar' }, row.avatar),
-        h('span', { class: 'b-name' }, row.name),
-        h('span', null, `$${row.total}`),
-      ))),
+    h('div', { class: 'receipt__rule' }),
+    r.lines.map((line) => receiptLine(`R${line.round} earnings`, money(line.earned))),
+    h('div', { class: 'receipt__rule' }),
+    r.shares.map((team) => receiptLine(
+      [`Team ${team.phase} total ÷ 2`, h('small', null, `with ${team.partner} · $${team.teamTotal} ÷ 2`)],
+      money(team.half))),
+    h('div', { class: 'receipt__rule receipt__rule--double' }),
+    receiptLine('TOTAL', money(r.total), 'receipt__line--total'),
+    receiptLine('RANK', h('span', { class: 'receipt__price' }, `${place} of ${r.of}`), 'receipt__line--total'),
+    h('div', { class: 'receipt__thanks' }, '* thank you for trading *'),
   );
+}
+
+function renderFinal() {
+  const rows = state.standings;
+  const list = h('ol', { class: 'board' }, rows.map((row) =>
+    h('li', { class: row.id === state.me.id ? 'is-me' : '' },
+      h('span', { class: 'b-rank' }, rankLabel(row, rows)),
+      avatarEl(row.avatar, row.ring, 'b-avatar'),
+      h('span', { class: 'b-name' }, row.name),
+      h('span', { class: 'b-total' }, `$${row.total}`),
+    )));
+  const box = h('div', { class: 'board-box' }, list);
+
+  app.replaceChildren(
+    state.receipt ? receipt() : null,
+    h('section', { class: 'card panel' }, h('h3', null, '🏆 Final standings'), box),
+  );
+  finalShown = true;
+
+  // Bring the player's own row into view inside the list.
+  const mine = list.querySelector('.is-me');
+  if (mine) box.scrollTop = Math.max(0, mine.offsetTop - box.clientHeight / 2 + mine.offsetHeight / 2);
 }

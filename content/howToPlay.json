@@ -41,8 +41,6 @@
       "text": "Nobody sees totals until the end. Final standings are revealed after round 4."
     }
   ],
-  "secretIntro": {
-    "title": "🙈 Secret Market!",
-    "text": "These fruits' prices stay hidden until the end — even from their sellers."
-  }
+  "secretTeaser": "Some stands might close up shop… 👀",
+  "secretResults": "Some stands stayed closed. Their prices stay hidden until the end — even from their sellers."
 }

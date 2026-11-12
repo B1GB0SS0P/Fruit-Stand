@@ -70,7 +70,12 @@ describe('config', () => {
       secretShare: 0.25,
       changeTokens: 1,
       bidSeconds: 300,
+      ambientSecretWeight: 3,
+      ambientCountProjector: 10,
+      ambientCountPhone: 5,
     });
+    expect(Object.keys(defaultConfig.skyTheme).sort()).toEqual(['final', 'lobby', 'round1', 'round2', 'round3', 'round4']);
+    expect(defaultConfig.avatarRingColors.length).toBeGreaterThanOrEqual(12);
     expect(defaultConfig.fruits).toHaveLength(20);
     expect(defaultConfig.avatars).toHaveLength(24);
     const fruitEmoji = defaultConfig.fruits.map((f) => f.emoji);
@@ -82,6 +87,15 @@ describe('config', () => {
     expect(() => resolveConfig({ changeTargets: 'all' })).toThrow(/changeTargets/);
     expect(() => resolveConfig({ minPrice: 6 })).toThrow(/minPrice/);
     expect(() => resolveConfig({ secretShare: 2 })).toThrow(/secretShare/);
+    expect(() => resolveConfig({ ambientSecretWeight: 0 })).toThrow(/ambientSecretWeight/);
+    expect(() => resolveConfig({ avatarRingColors: ['red'] })).toThrow(/avatarRingColors/);
+    expect(() => resolveConfig({ skyTheme: { final: ['#000000'] } })).toThrow(/skyTheme\.final/);
+  });
+
+  it('lets one sky state be changed without restating the rest', () => {
+    const config = resolveConfig({ skyTheme: { round4: ['#ff0000', '#00ff00'] } });
+    expect(config.skyTheme.round4).toEqual(['#ff0000', '#00ff00']);
+    expect(config.skyTheme.lobby).toEqual(defaultConfig.skyTheme.lobby);
   });
 
   it('respects a different price range', () => {

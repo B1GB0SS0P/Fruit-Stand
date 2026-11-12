@@ -1,4 +1,4 @@
-import { timeLeft } from './engine.js';
+import { timeLeft, freeRing } from './engine.js';
 import { resolveConfig } from '../config.js';
 
 const FORMAT = 'fruit-stand-snapshot';
@@ -33,6 +33,16 @@ export function importSnapshot(snapshot) {
     typeof state.timer.remainingMs === 'number';
   if (!shapeOk) throw new Error('This snapshot is damaged and cannot be loaded.');
   state.config = resolveConfig(state.config);
+  // Snapshots saved before avatar rings and the round 2 ambience existed.
+  const players = state.players;
+  state.players = [];
+  for (const player of players) {
+    if (!player.ring) player.ring = freeRing(state, player.avatar);
+    state.players.push(player);
+  }
+  for (const round of state.rounds) {
+    if (round.ambient === undefined) round.ambient = null;
+  }
   state.timer = { remainingMs: state.timer.remainingMs, runningSince: null };
   return state;
 }

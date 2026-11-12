@@ -1,10 +1,11 @@
-// The projector: lobby, market, results, secret reveal and final standings.
+// The projector: lobby, market, results, the reveal and final standings.
 // Read-only: it never sends anything but "watch this room".
 
 import {
   $, h, toast, connect, call, watchConnection, Countdown, clockText,
-  fruitLookup, makeStand, loadContent, prefersReducedMotion, plural,
+  fruitLookup, makeStand, loadContent, prefersReducedMotion, plural, avatarEl, rankLabel,
 } from './common.js';
+import { mountScene, sceneFor } from './scene.js';
 
 const app = $('#app');
 const fx = $('#fx');
@@ -16,12 +17,20 @@ let config = null;
 let fruitOf = () => null;
 let state = null;
 let sceneKey = null;
-let secretIntro = { title: '🙈 Secret Market!', text: "These fruits' prices stay hidden until the end — even from their sellers." };
-let introPlayedFor = null; // round whose secret intro has been shown
+let teaser = 'Some stands might close up shop… 👀';
+let closedNote = 'Some stands stayed closed. Their prices stay hidden until the end — even from their sellers.';
+let teaserPlayedFor = null; // round whose teaser card has been shown
 let revealTimers = [];
 const shownPeople = new Set();
+let ambientItems = null; // round 2 background sequence
+const scene = mountScene('projector');
 
-loadContent().then((content) => { secretIntro = content.secretIntro; }).catch(() => {});
+loadContent().then((content) => {
+  teaser = content.secretTeaser || teaser;
+  closedNote = content.secretResults || closedNote;
+}).catch(() => {});
+
+const later = (fn, ms) => revealTimers.push(setTimeout(fn, ms));
 
 // Stand proportions in em, used to fit the market on the screen.
 const STAND_W = 11.4;
@@ -89,6 +98,13 @@ const countdown = new Countdown((seconds, running) => {
 // numbers change. That keeps the animations from replaying.
 function render() {
   if (!state || !config) return;
+  scene.set(sceneFor(state), config.skyTheme);
+  // The sequence arrives once, with the first update of the round.
+  if (state.ambient) ambientItems = state.ambient;
+  else if (!state.curtained) ambientItems = null;
+  if (ambientItems) {
+    scene.ambient.start(ambientItems, config.ambientCountProjector, config.bidSeconds * 1000 - state.timer.remainingMs);
+  } else scene.ambient.stop();
   const key = `${state.status}:${state.round}`;
   if (key !== sceneKey) {
     sceneKey = key;
@@ -165,7 +181,10 @@ function buildLobby() {
         h('a', { class: 'btn btn--sun btn--big', href: `/how-to-play?back=${encodeURIComponent(`/screen?room=${state.code}`)}` }, '📖 How to play'),
       ),
       h('div', { class: 'lobby__people' },
-        h('div', { class: 'lobby__count', id: 'count' }),
+        h('div', { class: 'lobby__head' },
+          h('div', { class: 'lobby__count', id: 'count' }),
+          h('div', { class: 'chalk-sign' }, 'Opening soon'),
+        ),
         h('div', { class: 'crowd', id: 'crowd' }),
       ),
     ),
@@ -185,7 +204,7 @@ function updateLobby() {
     if (shownPeople.has(player.name)) continue;
     shownPeople.add(player.name);
     crowd.append(h('div', { class: 'person anim-pop', 'data-name': player.name },
-      h('span', null, player.avatar), h('span', null, player.name)));
+      avatarEl(player.avatar, player.ring), h('span', null, player.name)));
   }
   const n = state.players.length;
   crowd.style.setProperty('--crowd-size', n > 44 ? '2vh' : n > 28 ? '2.6vh' : n > 14 ? '3.3vh' : '4.2vh');
@@ -195,12 +214,12 @@ function updateLobby() {
 // ----- a round -----
 
 function buildRound() {
-  const secret = new Set(state.secretFruits);
-  const playIntro = secret.size > 0 && introPlayedFor !== state.round && state.bidsIn === 0;
-  introPlayedFor = secret.size > 0 ? state.round : introPlayedFor;
+  // In the secret round every stand is curtained, so nothing is given away.
+  const playTeaser = state.curtained && teaserPlayedFor !== state.round && state.bidsIn === 0;
+  if (state.curtained) teaserPlayedFor = state.round;
 
   const stands = state.activeFruits.map((id) =>
-    makeStand(fruitOf(id), { covered: secret.has(id) && !playIntro }));
+    makeStand(fruitOf(id), { covered: state.curtained && !playTeaser }));
   const market = buildMarket(stands);
 
   app.replaceChildren(
@@ -210,68 +229,17 @@ function buildRound() {
     ),
     market,
   );
-  if (playIntro) requestAnimationFrame(() => requestAnimationFrame(() => playSecretIntro(market, [...secret])));
+  if (playTeaser) playTeaserCard(stands);
 }
 
-// The secret fruits drift in on gentle arcs, land on their stands, and the
-// stands get covered. Projector only.
-function playSecretIntro(market, secretIds) {
-  const card = h('div', { class: 'intro-card anim-pop' }, h('h1', null, secretIntro.title), h('p', null, secretIntro.text));
+// A short teaser card, then a curtain drops over every stand.
+function playTeaserCard(stands) {
+  const card = h('div', { class: 'intro-card anim-pop' }, h('h1', null, teaser));
   fx.append(card);
-  const cover = (id) => {
-    const stand = market.querySelector(`[data-fruit="${id}"]`);
-    if (stand) stand.classList.add('is-covered');
-  };
-  const later = (fn, ms) => revealTimers.push(setTimeout(fn, ms));
-
-  if (prefersReducedMotion() || !document.body.animate) {
-    later(() => secretIds.forEach(cover), 1500);
-    later(() => card.classList.add('is-leaving'), 6000);
-    later(() => card.remove(), 6700);
-    return;
-  }
-
-  const CARD_MS = 3200;
-  const GAP_MS = 700;
-  const FLIGHT_MS = 2600;
+  const CARD_MS = 3600;
   later(() => card.classList.add('is-leaving'), CARD_MS);
   later(() => card.remove(), CARD_MS + 700);
-
-  secretIds.forEach((id, i) => {
-    later(() => {
-      const stand = market.querySelector(`[data-fruit="${id}"]`);
-      if (!stand) return;
-      const target = stand.querySelector('.stand__fruit').getBoundingClientRect();
-      const size = target.height * 0.92;
-      const fromLeft = i % 2 === 0;
-      const startX = fromLeft ? -size * 1.5 : window.innerWidth + size * 0.5;
-      const startY = window.innerHeight * (0.55 + 0.1 * (i % 3));
-      const endX = target.left + (target.width - size) / 2;
-      const endY = target.top;
-      const peakY = Math.min(startY, endY) - window.innerHeight * 0.28;
-
-      const inner = h('span', { style: `font-size:${size}px` }, fruitOf(id).emoji);
-      const flyer = h('div', { class: 'flyer' }, inner);
-      fx.append(flyer);
-      // Sideways at a steady pace, up and down on a curve: together, an arc.
-      flyer.animate(
-        [{ transform: `translateX(${startX}px)` }, { transform: `translateX(${endX}px)` }],
-        { duration: FLIGHT_MS, easing: 'linear', fill: 'forwards' },
-      );
-      const fall = inner.animate(
-        [
-          { transform: `translateY(${startY}px) rotate(${fromLeft ? -200 : 200}deg)`, easing: 'cubic-bezier(0.2, 0.6, 0.4, 1)' },
-          { transform: `translateY(${peakY}px) rotate(${fromLeft ? -80 : 80}deg)`, easing: 'cubic-bezier(0.6, 0, 0.8, 0.4)', offset: 0.5 },
-          { transform: `translateY(${endY}px) rotate(0deg)` },
-        ],
-        { duration: FLIGHT_MS, fill: 'forwards' },
-      );
-      fall.onfinish = () => {
-        cover(id);
-        revealTimers.push(setTimeout(() => flyer.remove(), 350));
-      };
-    }, CARD_MS + 300 + i * GAP_MS);
-  });
+  stands.forEach((stand, i) => later(() => stand.classList.add('is-covered'), CARD_MS + 200 + i * 90));
 }
 
 // ----- results -----
@@ -280,22 +248,25 @@ function buildResults() {
   const round = state.results.find((r) => r.round === state.round);
   const sold = new Map(round.fruits.map((entry) => [entry.fruit, entry]));
   const ids = [...state.activeFruits, ...round.fruits.map((f) => f.fruit).filter((id) => !state.activeFruits.includes(id))];
+  // After the secret round the curtains lift, but only where a price is shown.
+  const someClosed = round.fruits.some((f) => f.price === null);
+  const LIFT_MS = someClosed ? 900 : 0;
 
   const stands = ids.map((id, i) => {
     const entry = sold.get(id);
     if (!entry) return makeStand(fruitOf(id), { dim: true, note: 'No sellers' });
-    if (entry.price === null) return makeStand(fruitOf(id), { covered: true, tag: '🙈 Secret', tagClass: 'stand__tag--secret anim-drop' });
-    const stand = makeStand(fruitOf(id), { tag: `$${entry.price}`, tagClass: 'anim-drop' });
-    stand.querySelector('.stand__tag').style.animationDelay = `${300 + i * 140}ms`;
+    if (entry.price === null) return makeStand(fruitOf(id), { covered: true });
+    const stand = makeStand(fruitOf(id), { tag: `$${entry.price}`, tagClass: 'anim-drop', covered: someClosed });
+    stand.querySelector('.stand__tag').style.animationDelay = `${LIFT_MS + 300 + i * 140}ms`;
+    if (someClosed) later(() => stand.classList.remove('is-covered'), 500 + i * 90);
     return stand;
   });
 
-  const hasSecret = round.fruits.some((f) => f.price === null);
   app.replaceChildren(
     topBar(h('div', { class: 'bigtimer bigtimer--label' }, 'Lowest prices'), [`Round ${state.round}`, h('small', null, 'results')]),
     buildMarket(stands),
   );
-  if (hasSecret) app.append(h('p', { class: 'subtitle anim-fade' }, `${secretIntro.title} ${secretIntro.text}`));
+  if (someClosed) app.append(h('p', { class: 'subtitle anim-fade' }, closedNote));
 }
 
 // ----- the end: secret prices, then standings -----
@@ -308,12 +279,12 @@ function buildReveal() {
 
   app.replaceChildren(
     h('header', { class: 'top' },
-      h('div', { class: 'top__left' }, h('h1', null, '🙈 Secret Market'), h('p', null, secretRound ? `Round ${secretRound.round} · the hidden prices` : '')),
+      h('div', { class: 'top__left' }, h('h1', null, '🙈 The closed stands'), h('p', null, secretRound ? `Round ${secretRound.round} · the hidden prices` : '')),
       h('div', { class: 'bigtimer bigtimer--label' }, 'The reveal'),
       h('div', { class: 'top__right' }, h('span', { id: 'revealed' }, `0 / ${secrets.length}`), h('small', null, 'uncovered')),
     ),
     market,
-    h('p', { class: 'subtitle', id: 'reveal-note' }, secrets.length ? 'Here come the secret prices…' : 'No secret prices this game.'),
+    h('p', { class: 'subtitle', id: 'reveal-note' }, secrets.length ? 'Here come the hidden prices…' : 'No hidden prices this game.'),
   );
 
   // Uncover one stand at a time.
@@ -330,45 +301,84 @@ function buildReveal() {
   });
 }
 
+// ----- final standings: a podium of market stalls, then the full board -----
+
+const PLACE = ['1st', '2nd', '3rd'];
+const STEP_GAP_MS = 2400;
+const MAX_ON_STEP = 6;
+
+// A podium step drawn as a stall: winners on top, striped awning, a
+// chalkboard with the place and total, and crates underneath.
+function stall(rank, group) {
+  const shown = group.slice(0, MAX_ON_STEP);
+  const extra = group.length - shown.length;
+  return h('div', { class: `stall stall--${rank} is-waiting${group.length > 3 ? ' stall--crowded' : ''}`, 'data-rank': rank },
+    h('div', { class: 'stall__people' },
+      shown.map((row) => h('div', { class: 'winner' },
+        avatarEl(row.avatar, row.ring, 'winner__avatar'),
+        h('div', { class: 'winner__name' }, row.name))),
+      extra > 0 ? h('div', { class: 'winner winner--more' }, `+${extra}`) : null,
+    ),
+    h('div', { class: 'stall__awning' }),
+    h('div', { class: 'stall__body' },
+      h('div', { class: 'stall__sign' },
+        h('b', null, group.length > 1 ? `T-${rank}` : PLACE[rank - 1]),
+        h('span', null, `$${group[0].total}`)),
+      h('div', { class: 'stall__crates' }, h('i'), h('i'), h('i')),
+    ),
+  );
+}
+
+function confetti() {
+  if (prefersReducedMotion()) return;
+  const colors = ['#e2552d', '#f7bb3d', '#2ba39b', '#d9527f', '#fff4dd', '#8e5bd0'];
+  const pieces = Array.from({ length: 90 }, (_, i) => h('i', {
+    class: 'confetti',
+    style: `left:${Math.random() * 100}vw; background:${colors[i % colors.length]}; --spin:${Math.round(Math.random() * 900 - 450)}deg; --slide:${Math.round(Math.random() * 16 - 8)}vw; animation-duration:${(3.2 + Math.random() * 2.8).toFixed(2)}s; animation-delay:${(Math.random() * 1.6).toFixed(2)}s`,
+  }));
+  fx.append(...pieces);
+  later(() => pieces.forEach((piece) => piece.remove()), 8500);
+}
+
 function buildFinal() {
   const rows = state.standings;
 
-  // The podium holds the top three places. Tied players share a step. If a
-  // tie makes a step too crowded, the podium stops there.
-  const steps = [];
-  let placed = 0;
-  for (const rank of [...new Set(rows.map((r) => r.rank))].slice(0, 3)) {
-    const group = rows.filter((r) => r.rank === rank);
-    if (placed + group.length > 9 || group.length > 4) break;
-    steps.push(group);
-    placed += group.length;
-  }
-  const rest = rows.slice(placed);
+  // A step is picked by the rank number itself. Two players tied for 1st
+  // share the top stall; the next player is 3rd and stands on the 3rd one.
+  const stalls = [1, 2, 3]
+    .map((rank) => ({ rank, group: rows.filter((row) => row.rank === rank) }))
+    .filter((step) => step.group.length)
+    .map((step) => stall(step.rank, step.group));
+  const podium = h('div', { class: 'podium' }, stalls);
 
-  const podium = steps.length ? h('div', { class: 'podium' }, steps.map((group, i) =>
-    h('div', { class: `step step--${i + 1} anim-pop`, style: `animation-delay:${(steps.length - 1 - i) * 900}ms` },
-      h('div', { class: 'step__people' }, group.map((row) =>
-        h('div', { class: 'winner' },
-          h('div', { class: 'winner__avatar' }, row.avatar),
-          h('div', { class: 'winner__name' }, row.name)))),
-      h('div', { class: 'step__block' }, h('b', null, `#${group[0].rank}`), h('span', null, `$${group[0].total}`)),
-    ))) : null;
-
-  const columns = rest.length > 30 ? 4 : rest.length > 16 ? 3 : rest.length > 6 ? 2 : 1;
-  const perColumn = Math.max(1, Math.ceil(rest.length / columns));
-  const list = rest.length ? h('div', {
-    class: 'rest anim-fade',
-    style: `--rows:${perColumn}; --rest-size:${perColumn > 12 ? '1.9vh' : perColumn > 8 ? '2.5vh' : '3vh'}; animation-delay:${steps.length * 900}ms`,
-  }, rest.map((row) =>
-    h('div', { class: 'rest__row' },
-      h('span', { class: 'n' }, `#${row.rank}`),
-      h('span', { class: 'a' }, row.avatar),
+  // Everyone, in 2-3 columns (4 only for very large rooms).
+  const columns = rows.length > 45 ? 4 : rows.length > 24 ? 3 : 2;
+  const perColumn = Math.max(1, Math.ceil(rows.length / columns));
+  const board = h('div', {
+    class: 'rest is-waiting',
+    style: `--rows:${perColumn}; --cols:${columns}; --rest-size:${Math.min(3, (38 / perColumn) * 0.72).toFixed(2)}vh`,
+  }, rows.map((row) =>
+    h('div', { class: `rest__row${row.rank <= 3 ? ' is-top' : ''}` },
+      h('span', { class: 'n' }, rankLabel(row, rows)),
+      avatarEl(row.avatar, row.ring),
       h('span', { class: 'name' }, row.name),
-      h('span', null, `$${row.total}`)))) : null;
+      h('span', { class: 't' }, `$${row.total}`))));
 
   app.replaceChildren(h('section', { class: 'finale' },
     h('h1', null, `🏆 Final standings · ${plural(rows.length, 'player')}`),
     podium,
-    list,
+    board,
   ));
+
+  // 3rd, then 2nd, then 1st, with a pause between each. Then the board.
+  const order = [...stalls].sort((a, b) => b.dataset.rank - a.dataset.rank);
+  const show = (el) => {
+    el.classList.remove('is-waiting');
+    el.classList.add(el === board ? 'anim-fade' : 'anim-pop');
+  };
+  order.forEach((el, i) => later(() => {
+    show(el);
+    if (el.dataset.rank === '1') confetti();
+  }, 900 + i * STEP_GAP_MS));
+  later(() => show(board), 900 + order.length * STEP_GAP_MS - 600);
 }

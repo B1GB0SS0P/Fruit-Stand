@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { startServer, allKeys, testRandom } from './helpers.js';
+import { startServer, allKeys, ambientOf, testRandom } from './helpers.js';
+import { defaultConfig } from '../../config.js';
 
 let t;
 afterEach(async () => {
@@ -10,17 +11,46 @@ afterEach(async () => {
 const PLAYER_FORBIDDEN = ['selections', 'earnings', 'bidType', 'fruitOf', 'lowest', 'winners', 'units', 'token', 'rejoinCode', 'rngState', 'teams', 'rounds'];
 const HOST_FORBIDDEN = ['selections', 'selection', 'earnings', 'price', 'results', 'total', 'lowest', 'token', 'rngState', 'rounds'];
 
+const fruitEmojis = defaultConfig.fruits.map((fruit) => fruit.emoji);
+
 // Checks every message a client ever received.
 function audit(client, role) {
   let sawReveal = false;
+  let ambientSends = 0;
   for (const { event, payload } of client.log) {
     if (event === 'autosave') {
       expect(role).toBe('host');
       expect(Object.keys(JSON.parse(payload.file)).sort()).toEqual(['data', 'format', 'iv', 'tag', 'version']);
       continue;
     }
-    if (event !== 'state') continue;
+    if (event === 'config') {
+      for (const key of allKeys(payload)) expect(key).not.toMatch(/secret|weight/i);
+      continue;
+    }
+    if (event !== 'state') {
+      // Announcements, nudges and the rest never mention secret fruits.
+      for (const key of allKeys(payload)) expect(key).not.toMatch(/secret/i);
+      continue;
+    }
     const keys = allKeys(payload);
+
+    // Until round 2 resolves, nothing says which fruits are secret: no
+    // flag, no list, no field. The ambient sequence is emojis and timing.
+    const beforeSecretsKnown = payload.round < 2 || (payload.round === 2 && payload.status === 'bidding');
+    if (beforeSecretsKnown) {
+      for (const key of keys) expect(key, `${role} got "${key}" too early`).not.toMatch(/secret/i);
+    }
+    const playingRound2 = payload.round === 2 && payload.status === 'bidding';
+    expect(payload.curtained).toBe(playingRound2);
+    // Sent once per round 2, then left out of later updates.
+    if (!playingRound2) expect(payload.ambient).toBeNull();
+    else if (payload.ambient) ambientSends += 1;
+    for (const item of payload.ambient ?? []) {
+      expect(Object.keys(item).sort()).toEqual(['delay', 'duration', 'emoji']);
+      expect(fruitEmojis).toContain(item.emoji);
+    }
+    if (role === 'player') expect(payload.receipt === null).toBe(payload.status !== 'final');
+    else expect(keys.has('receipt')).toBe(false);
     const ended = payload.status === 'reveal' || payload.status === 'final';
     if (ended) sawReveal = true;
 
@@ -33,16 +63,15 @@ function audit(client, role) {
     for (const round of payload.results) {
       expect(Object.keys(round).sort()).toEqual(['fruits', 'phase', 'round']);
       for (const entry of round.fruits) {
-        expect(Object.keys(entry).sort()).toEqual(['fruit', 'price', 'secret']);
+        expect(Object.keys(entry).sort()).toEqual(round.round === 2 ? ['fruit', 'price', 'secret'] : ['fruit', 'price']);
         if (entry.secret && !ended) expect(entry.price).toBeNull();
         else expect(entry.price).toBeGreaterThanOrEqual(1);
         if (entry.secret) expect(round.round).toBe(2);
       }
     }
-    // Secret fruits are only ever announced during round 2.
-    if (payload.secretFruits.length) expect(payload.round).toBe(2);
   }
   expect(sawReveal).toBe(true);
+  expect(ambientSends).toBe(1);
 }
 
 async function playFullGame(count) {
@@ -65,13 +94,20 @@ async function playFullGame(count) {
     await t.settle();
     expect(screen.state).toMatchObject({ status: 'bidding', round, bidsIn: 0, playerCount: count });
     if (round === 2) {
+      // Everyone gets the same curtains and the same ambient sequence, made
+      // only from fruits in play. The secret list itself stays on the server.
       const expectedSecret = Math.max(1, Math.floor(expectedFruits * 0.25 + 0.5));
+      expect(room.state.rounds[1].secret).toHaveLength(expectedSecret);
+      const inPlay = room.state.activeFruits.map((id) => defaultConfig.fruits.find((f) => f.id === id).emoji);
       for (const client of [screen, host, ...bots.map((b) => b.socket)]) {
-        expect(client.state.secretFruits).toHaveLength(expectedSecret);
-        expect(client.state.secretFruits).toEqual(screen.state.secretFruits);
+        expect(client.state.curtained).toBe(true);
+        expect(ambientOf(client)).toEqual(ambientOf(screen));
       }
+      expect(ambientOf(screen).length).toBeGreaterThan(100);
+      for (const item of ambientOf(screen)) expect(inPlay).toContain(item.emoji);
     } else {
-      expect(screen.state.secretFruits).toEqual([]);
+      expect(screen.state.curtained).toBe(false);
+      expect(screen.state.ambient).toBeNull();
     }
 
     for (const bot of bots) {
@@ -113,6 +149,20 @@ async function playFullGame(count) {
   }
   const standings = screen.state.standings;
   expect(standings[0].rank).toBe(1);
+
+  // Every avatar is an animal in a ring, and no two players look the same.
+  expect(new Set(standings.map((row) => `${row.avatar} ${row.ring}`)).size).toBe(count);
+
+  // Each phone gets its own receipt, and it adds up to that player's total.
+  for (const bot of bots) {
+    const { receipt, me } = bot.socket.state;
+    const row = standings.find((entry) => entry.id === me.id);
+    expect(receipt.lines.map((line) => line.round)).toEqual([1, 2, 3, 4]);
+    expect(receipt.shares.map((team) => team.phase)).toEqual([1, 2]);
+    expect(receipt).toMatchObject({ total: row.total, rank: row.rank, of: count });
+    const halves = receipt.shares.reduce((sum, team) => sum + Number(team.half), 0);
+    expect(Math.abs(halves - Number(receipt.total))).toBeLessThan(0.02);
+  }
   expect(new Set(standings.map((row) => row.name))).toEqual(new Set(bots.map((b) => b.name)));
   for (let i = 1; i < standings.length; i++) {
     expect(Number(standings[i - 1].total)).toBeGreaterThanOrEqual(Number(standings[i].total));

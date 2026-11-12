@@ -63,7 +63,7 @@
 }
 .people li.is-in { border-color: var(--leaf); background: #e3f4e8; }
 .people li.is-waiting { border-color: var(--sun); background: #fff3d3; }
-.people .p-avatar { font-size: 1.5rem; }
+.people .p-avatar { font-size: 1.15rem; }
 .people .p-name { flex: 1; min-width: 4.5em; overflow-wrap: break-word; line-height: 1.15; }
 .people .p-name small { display: block; font-weight: 700; color: var(--ink-soft); font-size: 0.78rem; }
 .people .p-off { color: var(--tomato); }

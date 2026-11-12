@@ -1,0 +1,23 @@
+{
+  "name": "fruit-stand",
+  "version": "1.0.0",
+  "description": "Fruit Stand: a real-time multiplayer pricing game for a live room",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.4"
+  }
+}

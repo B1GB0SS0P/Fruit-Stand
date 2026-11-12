@@ -1,0 +1,295 @@
+Build a real-time multiplayer web game called **Fruit Stand**, deployed as a single Render web service. It's adapted from a game on the Korean show _The Genius_ (Season 3). I host it live for up to 40 players on their phones, with a projector showing a shared screen. One game takes 20–30 minutes.
+
+Read this whole spec before writing code. Then reply with your file structure, your visual design plan and any gaps you see in the spec, and wait for my go-ahead before building.
+
+---
+
+## 1. Game rules (the server must enforce all of these)
+
+**Setup**
+
+- **Fruit pool** (in config, each with its emoji): Apple 🍎, Grape 🍇, Melon 🍈, Tangerine 🍊, Strawberry 🍓, Watermelon 🍉, Banana 🍌, Pineapple 🍍, Mango 🥭, Peach 🍑, Pear 🍐, Cherry 🍒, Lemon 🍋, Kiwi 🥝, Coconut 🥥, Blueberry 🫐, Green Apple 🍏, Tomato 🍅, Olive 🫒, Avocado 🥑.
+- The number of fruits **in play scales with the player count** (see Dealing). The rest of the pool sits unused.
+- 4 rounds:
+  - Rounds 1–2 are **Phase 1**.
+  - Round 2 is also the **Secret Market round** (see below).
+  - Rounds 3–4 are **Phase 2**.
+- **The player count must be even, with a minimum of 4.** Teams are always exactly 2 players.
+  - The host removes players in the lobby until the count is even. Any extra player gets a separate task offline.
+  - Starting with an odd count is refused.
+- **Phase 1 teams:** random pairs, made when the host starts the game.
+- **Phase 2 teams:** new random pairs, made when round 3 starts.
+  - The only constraint is **no one is paired with their Phase 1 partner**. This is a hard rule, except with 4 players, where it may be impossible; then pick the arrangement with the fewest repeats.
+  - Two teammates selling the same fruit is allowed. Do not try to avoid it.
+
+**Dealing fruits**
+
+- Each player is dealt **one fruit** when the game starts and keeps it for all 4 rounds. Only a Change (below) alters it.
+- Active fruit count: `k = min(poolSize, floor(players / sellersPerFruit))`, where `sellersPerFruit` is in config (default 2). For example, 8 players → 4 fruits, and 40 players → 20 fruits.
+- Pick the k active fruits at random from the pool.
+- Spread players across the k fruits as evenly as possible, with these rules:
+  - **Every active fruit has ≥ 2 sellers.**
+  - **Phase 1 teammates never share a fruit.**
+- Retry random deals until valid (up to ~500 attempts). If none works, show the host an error.
+
+**Bidding (each round)**
+
+- Each player privately submits one whole-number price from **$1 to $5** (min and max in config).
+- A player can rebid any number of times until the round resolves. Only the latest bid counts.
+- **Each round has a 5-minute bidding timer** (`bidSeconds` in config, default 300). The timer is server-side and starts when the round opens.
+  - Every phone and the projector show the same countdown, synced to the server's clock, not the phone's.
+  - When the timer hits 0, every player without a bid **automatically gets the max price ($5)**, and the round resolves.
+  - Each auto-bid is marked in the CSV.
+  - The round **resolves early the instant every player has a bid**.
+  - The host can **add 1 minute** or **pause/resume** the timer.
+  - The timer must survive a snapshot export/import, restoring the remaining time.
+- Teammates discuss strategy in person, so there's no in-app chat.
+
+**Scoring a fruit in a round**
+
+- `units` = number of players selling that fruit this round.
+- `lowest` = lowest bid among those sellers.
+- Each seller who bid `lowest` earns `lowest × units ÷ (number of sellers tied at lowest)`. Every other seller of that fruit earns 0.
+- Example: Apple has 2 sellers bidding $4 and $3. The $3 seller earns $6 and the other earns $0. If both bid $5, each earns $5.
+
+**Change (ability token)**
+
+- Each player has **1 Change token for the whole game**. An unused token carries into Phase 2.
+- Using it switches the player's fruit to another fruit. Config `changeTargets` sets which fruits are allowed:
+  - `"active"` (default): only fruits in play this game.
+  - `"any"`: any fruit in the pool.
+- A Change is only allowed during bidding, and **only before that player has bid this round**.
+- It's permanent, and it's announced to everyone immediately (e.g. "Ben changed Grape → Melon").
+- In round 2, a player **may Change into a Secret Market fruit**.
+- If a Change is invalid (no token, already bid, or invalid fruit), reject it, keep the token, and tell the player why.
+
+**Secret Market (round 2 only)**
+
+- When round 2 opens, the server randomly picks `max(1, round(k × secretShare))` active fruits as **secret fruits**. `secretShare` is in config, default 0.25 (so 40 players → 5 of 20 fruits).
+- The secret fruits are **announced to everyone at the start of round 2, before any bidding**:
+  - On the projector, they float in with an animation (see Design).
+  - On phones, a banner appears and the affected stands are marked.
+- Scoring for secret fruits works exactly as normal. Only the reveal changes:
+  - In round 2's results, each secret fruit shows "🙈 Secret" instead of a price.
+  - **Nobody** learns a secret fruit's lowest price before the end, including its own sellers. A seller who bid $5 on a secret fruit doesn't know whether they earned $5 or $0.
+- The secret rule text appears in the UI **only during round 2** (round 2's intro, the banner, and its results). It isn't mentioned in the lobby, round 1, or rounds 3–4.
+- **At the final standings, reveal round 2's secret prices** in a dramatic step: each secret stand uncovers one by one on the projector before the leaderboard appears.
+- Rounds 1, 3 and 4 have no secret fruits.
+
+**What gets revealed**
+
+- After each round, everyone sees **each sold fruit's lowest price**, except secret fruits in round 2.
+  - List every fruit that had at least one seller that round.
+  - Never show names, who won, earnings, or running totals.
+- Players never see their own earnings during the game.
+- After round 4:
+  1. Reveal the secret prices (above).
+  2. Show the **final standings**. Each player's total is `(Phase 1 team's combined earnings ÷ 2) + (Phase 2 team's combined earnings ÷ 2)`. List every player, ranked, with their avatar and total to 2 decimal places. Tied totals share a rank.
+
+---
+
+## 2. Screens and flow
+
+Mobile-first: players are on phones, and the projector shows the shared screen.
+
+**Join flow (Kahoot-style, at `/`)**
+
+1. **Room code:** one big input and a big button. A wrong code gives a friendly error. A locked room says it's locked.
+2. **Name:** 1–20 characters, unique per room ignoring case. A taken name asks for another.
+3. **Avatar:** pick from a grid of ~24 simple **animal emoji icons** (🐶🐱🐼🦊🐸🐧🐨🐯 …).
+   - **No fruit icons**, so an avatar can't be confused with the fruit a player sells.
+   - Duplicate avatars are allowed.
+4. **Waiting screen:** "You're in!", with their avatar and name, and a live count of joined players.
+
+The projector lobby shows each avatar and name popping in as players join, Kahoot-style.
+
+**Player screen (phone)**
+
+- If the host removes them: "You've been assigned a separate task — please see the host." Their token is revoked, and they can rejoin only if the host unlocks the lobby.
+- **During the game,** the player sees **their own little fruit stand**: an awning, their fruit displayed on the counter, and a price tag. It shows:
+  - the round number and phase, and the countdown timer, which pulses in the last 30 seconds with the hint "No bid = $5";
+  - their team, with their teammate's avatar, name and fruit;
+  - how many other players sell their fruit (a count only, never names);
+  - the **$1–$5 price buttons, styled as price-tag stickers**, with the current bid stuck on the stand;
+  - the Change token and its button, with a confirm step that shows a fruit picker. Secret fruits are marked in round 2;
+  - in round 2, a "🙈 Secret Market" banner, plus a covered or curtained look on their stand if their own fruit is secret;
+  - a scrollable history of past rounds' results;
+  - public Change announcements as they happen.
+- Every action gets **instant visible feedback**, such as a sticker slapping on or a toast. Nothing may fail silently.
+
+**Projector screen (`/screen?room=CODE`, read-only)**
+
+- **Lobby:** the room code in big text, the join URL with a QR code, avatars popping in, and the player count.
+- **Round:**
+  - the whole market as a row or grid of little stands, one per active fruit;
+  - "X / N bids in" (no names) and a big countdown timer;
+  - a toast for each Change announcement.
+  - With 20 fruits, the stands must still fit on one 16:9 screen without scrolling.
+- **Round 2 start:** the secret fruits **float in across the screen**, Fruit Ninja-style but calm: a few fruits on gentle arcs, not cluttered. They then settle onto their stands, which get covered.
+- **Results:** price tags drop onto each stand. Secret stands stay covered.
+- **End:** the secret stands uncover one by one, then a podium-style leaderboard with avatars.
+
+**Host screen (`/host`, password from an env var)**
+
+- Create a room, which generates a short code (e.g. 4 letters).
+- **Lobby:**
+  - a live player list with a **Remove** button on each (with confirm);
+  - a **Lock lobby** toggle;
+  - the player count, shown prominently;
+  - a **Start** button that stays disabled while the count is odd or under 4, with a hint like "11 players: remove 1 to start".
+- **Start game**, then **Next round** (only after the current round resolves). **Reset**, either keeping players or wiping them, with a confirm step.
+- **Status:** who has bid and who hasn't, as names only. **Never show the host any prices, earnings, totals or secret prices before the end.** I may be playing myself.
+- **Remind:** sends a nudge to everyone who hasn't bid.
+- **Timer controls:** +1 min and pause/resume.
+- **Set bid for a player:** for someone whose phone died. The host enters it blind.
+- **Download the final results CSV** after the game ends. It includes all bids per round with earnings, which fruits were secret, and the final totals.
+- **Download or upload a game snapshot (JSON)** at any time, to restore the game after a server restart.
+- The host can also join as a player from another device. Host and player identities are separate.
+
+**How to Play (`/how-to-play`, plus a button on the projector lobby and on the phone waiting screen)**
+
+- A step-through slideshow in the same stand theme. On the projector, it's controlled with arrow keys or a click; on phones, by swiping.
+- I'll use it to explain the game before starting.
+- Each slide has one idea, a big illustration (stands, price tags, avatars) and at most ~25 words. Use this content:
+  1. **Welcome to Fruit Stand 🍎** — You and a partner run fruit stands. Most money at the end wins.
+  2. **Your fruit** — You get one fruit and keep it all game. One other player sells the same fruit: your rival. Your partner sells a different fruit.
+  3. **Set your price** — Each round, secretly pick $1–$5 on your phone. You have 5 minutes. No bid = $5.
+  4. **Cheapest wins** — The lowest price sells ALL of that fruit. Illustration: You $4, rival $3 → rival earns 2 × $3 = $6, you earn $0. Both $5 → $5 each. Ties split.
+  5. **Talk, deal, betray** — Find your rival, make deals… or break them. Results show only each fruit's lowest price, never who set it.
+  6. **Change token 🔄** — Once per game, switch to another fruit before you bid. Everyone is told.
+  7. **Partners** — Rounds 1–2 with one partner, rounds 3–4 with a new one. Your score = half of each team's earnings.
+  8. **Winning 🏆** — Nobody sees totals until the end. Final standings are revealed after round 4.
+
+- **Don't mention the Secret Market anywhere in How to Play.** It's a surprise. When round 2 starts, show its own short intro card instead: "🙈 Secret Market! These fruits' prices stay hidden until the end — even from their sellers."
+- Keep the slide text in one config or content file so I can edit the wording without touching code.
+
+---
+
+## 3. Visual design
+
+- **Theme:** a cute market of fruit stands, with striped awnings, wooden counters, chalkboard or price-tag stickers, and warm, friendly colours.
+  - Everything should be original art made with CSS, SVG and emoji. Use no assets from Kahoot, Fruit Ninja or any other game, and no logos or characters from them.
+- **Animation:**
+  - Use CSS transforms and opacity only.
+  - Phones get light animation only (a sticker pop, a banner slide). The heavy floating-fruit effect runs **only on the projector**.
+  - Respect `prefers-reduced-motion` by swapping animations for fades.
+- **Performance:** it must run smoothly on cheap Android phones with 40 players connected. No canvas loops running constantly on phones.
+- **Readability:** large text and tap targets of at least 44px. The projector must be readable from the back of a lecture room.
+
+---
+
+## 4. Technical requirements
+
+**Stack:** Node.js (LTS), Express and Socket.IO. Serve the frontend from the same service, either as plain HTML/JS or a small Vite build. It must be **one deployable service with no database**.
+
+**Server-authoritative**
+
+- All rules, validation and scoring run on the server. The client only sends intents (`join`, `bid`, `change`) and renders what it receives.
+- Each recipient gets **their own view**:
+  - a player receives only their own bid, their team's info, public announcements and results;
+  - secret fruits' prices are never sent to any client until the end reveal;
+  - other players' bids never reach any client before the end, including the host and the screen.
+
+**Game logic as a pure module** (e.g. `game/engine.js`)
+
+- Plain functions over a state object, with no Socket.IO or Express inside.
+- Use a seedable random number generator so tests are deterministic.
+- Socket handlers stay thin: they validate input, call the engine, then emit each recipient's view.
+
+**Identity and reconnects**
+
+- On join, give each player a random token and store it in `localStorage`, wrapped in try/catch, falling back to the URL.
+- A returning token restores the player's seat.
+- Phones lock and switch apps, so use Socket.IO auto-reconnect and send a full state resync on every reconnect.
+
+**Concurrency**
+
+- Every mutation must be idempotent and validated against the current round number.
+- Reject stale buttons from earlier rounds, never double-apply a bid, and resolve each round exactly once.
+
+**Rooms:** multiple concurrent rooms, keyed by code. Delete a room after 3 hours of inactivity.
+
+**Render constraints** (from Render's docs, so design around them):
+
+- Free web services **spin down after 15 minutes without traffic**, and the next request then takes about **1 minute to start up**. Messages on open WebSockets count as traffic.
+- The **filesystem is ephemeral**, and Render **may restart a free service at any time**. All in-memory state is lost on restart, which is why the snapshot download and upload exist.
+- Read `PORT` from env, add `GET /healthz`, and provide a `render.yaml` or the exact dashboard settings (build command, start command, and the env vars `HOST_PASSWORD` and `NODE_ENV`).
+
+**Config** (one file, with defaults):
+
+| Setting                  | Default                          |
+| ------------------------ | -------------------------------- |
+| Fruit pool               | the 20 fruits above, with emojis |
+| Avatar set               | ~24 animal emojis                |
+| `sellersPerFruit`        | 2                                |
+| `changeTargets`          | `"active"`                       |
+| Min / max price          | 1 / 5                            |
+| Total rounds             | 4                                |
+| Last round of Phase 1    | 2                                |
+| Secret round             | 2                                |
+| `secretShare`            | 0.25                             |
+| Change tokens per player | 1                                |
+| `bidSeconds`             | 300                              |
+| Max players per room     | 40                               |
+
+---
+
+## 5. Tests (required before you call it done)
+
+Use Vitest (or similar) for the engine, plus Socket.IO integration tests with real client connections. Cover at least:
+
+1. **Join:**
+   - invalid room codes, name length and duplicate names (any case) are rejected;
+   - a locked lobby refuses joins;
+   - an avatar is required;
+   - a removed player's token is revoked;
+   - starting is refused with an odd count or fewer than 4 players.
+2. **Dealing,** for every even player count from 4 to 40:
+   - the active fruit count matches the formula;
+   - every active fruit has ≥ 2 sellers;
+   - Phase 1 teammates never share a fruit;
+   - each player has exactly one fruit;
+   - fruits persist across rounds.
+3. **Phase 2 teams:**
+   - no repeat partners for 6+ players;
+   - every player is in exactly one pair.
+4. **Bids:**
+   - out-of-range and non-integer bids are rejected;
+   - a rebid overwrites the old bid;
+   - a stale round number is rejected;
+   - the round resolves exactly once, on the last bid;
+   - **timer:** on expiry, missing bids become $5 and the round resolves; an early full set of bids cancels the timer; +1 min and pause/resume work; a bid arriving after expiry is rejected. Use fake timers.
+5. **Scoring:** a single lowest bidder, a two-way tie, and a fruit with 1 or 3 sellers after a Change.
+6. **Change:**
+   - refused after bidding, with the token kept;
+   - permanent;
+   - announced to everyone;
+   - a second use is refused;
+   - works in Phase 2 with a carried-over token;
+   - the `changeTargets` modes behave as specified;
+   - **Changing into a secret fruit in round 2 is allowed.**
+7. **Secret Market:**
+   - happens only in round 2;
+   - the count matches the formula;
+   - secret fruits are announced before any bid;
+   - their prices appear in no payload to any client (players, host, screen) until the end reveal;
+   - scoring for secret fruits is unchanged;
+   - the end reveal shows the correct prices;
+   - the CSV marks secret fruits.
+8. **Privacy:** results payloads never contain names or earnings, and the host's status view never contains prices.
+9. **Totals:** final totals match the formula, and **the sum of all players' totals equals the sum of all earnings**.
+10. **Snapshots:** export mid-round 2 (with secret fruits set and the timer running), import, and the game continues identically, with the same remaining time.
+11. **Full simulated games** through Socket.IO, from join to final standings, with 8 bots and with 40 bots.
+
+---
+
+## 6. Deliverables
+
+- Complete, runnable files, with no placeholders or TODOs.
+- A `README.md` covering:
+  - running locally;
+  - running the tests;
+  - deploying to Render step by step;
+  - hosting a game;
+  - recovering after a restart from a snapshot.
+- Tell me about any rule here you think is ambiguous or broken **before** you implement around it.

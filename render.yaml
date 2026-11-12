@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: fruit-stand
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      - key: HOST_PASSWORD
+        sync: false # Render asks you for this when you create the service

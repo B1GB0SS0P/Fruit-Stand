@@ -1,0 +1,330 @@
+/* Shared look: colours, type, buttons, toasts and the fruit stand. */
+
+:root {
+  --cream: #fff4dd;
+  --paper: #fffdf6;
+  --ink: #3a281a;
+  --ink-soft: #7a6350;
+  --wood: #c08a4f;
+  --wood-dark: #8d5a2b;
+  --chalk: #2e3b35;
+  --leaf: #3d9a5c;
+  --leaf-dark: #2c7745;
+  --tomato: #e2552d;
+  --sun: #f7bb3d;
+  --line: #ecd9b6;
+
+  --awning-1: #e2552d;
+  --awning-2: #f08a24;
+  --awning-3: #2ba39b;
+  --awning-4: #d9527f;
+  --awning-5: #e0a514;
+
+  --radius: 16px;
+  --shadow: 0 4px 0 rgba(58, 40, 26, 0.16);
+  --font: ui-rounded, 'Nunito', 'Baloo 2', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--cream);
+  background-image: radial-gradient(rgba(192, 138, 79, 0.13) 2px, transparent 2.5px);
+  background-size: 26px 26px;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { line-height: 1.1; font-weight: 900; letter-spacing: -0.01em; }
+[hidden] { display: none !important; }
+
+.muted { color: var(--ink-soft); }
+.center { text-align: center; }
+
+/* ---------- buttons and inputs ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--leaf);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 1.1rem;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--leaf-dark);
+  transition: transform 0.08s ease, opacity 0.15s ease;
+  touch-action: manipulation;
+}
+.btn:active { transform: translateY(3px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--wide { width: 100%; }
+.btn--big { min-height: 64px; font-size: 1.35rem; }
+.btn--plain { background: var(--paper); color: var(--ink); box-shadow: 0 4px 0 var(--line); border: 2px solid var(--line); }
+.btn--warn { background: var(--tomato); box-shadow: 0 4px 0 #a83a1b; }
+.btn--sun { background: var(--sun); color: var(--ink); box-shadow: 0 4px 0 #c98d14; }
+.btn--small { min-height: 44px; padding: 6px 14px; font-size: 0.95rem; border-radius: 12px; }
+
+.input {
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: 3px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-align: center;
+}
+.input:focus { outline: none; border-color: var(--leaf); }
+.input--code { font-size: 2.2rem; letter-spacing: 0.3em; text-transform: uppercase; padding-left: 0.3em; }
+
+.card {
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.error {
+  background: #fde3da;
+  color: #8f2b0e;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+}
+
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  pointer-events: none;
+}
+.toast {
+  background: var(--chalk);
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+  transition: opacity 0.35s ease;
+}
+.toast--warn { background: var(--sun); color: var(--ink); }
+.toast--error { background: var(--tomato); }
+.toast--good { background: var(--leaf); }
+.toast.is-leaving { opacity: 0; }
+
+.offline {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  background: var(--tomato);
+  color: #fff;
+  text-align: center;
+  font-weight: 800;
+  padding: 8px;
+}
+
+/* ---------- the fruit stand ---------- */
+
+.stand {
+  position: relative;
+  width: 10em;
+  height: 10.6em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+}
+.stand__awning {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 2.2em;
+  border-radius: 0.7em 0.7em 0 0;
+  background: repeating-linear-gradient(90deg, var(--awning) 0 1.25em, #fff8ea 1.25em 2.5em);
+  box-shadow: inset 0 0.25em 0 rgba(255, 255, 255, 0.25);
+}
+.stand__awning::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 0.7em;
+  background:
+    radial-gradient(circle at 0.625em 0, var(--awning) 0 0.6em, transparent 0.63em) 0 0 / 2.5em 100% repeat-x,
+    radial-gradient(circle at 1.875em 0, #fff8ea 0 0.6em, transparent 0.63em) 0 0 / 2.5em 100% repeat-x;
+  filter: drop-shadow(0 0.12em 0 rgba(58, 40, 26, 0.18));
+}
+.stand__window {
+  position: relative;
+  width: 92%;
+  flex: 1;
+  overflow: hidden;
+  background: linear-gradient(#fbe9c6, #f6dcae);
+  border-left: 0.35em solid var(--wood-dark);
+  border-right: 0.35em solid var(--wood-dark);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.stand__fruit {
+  font-size: 4.4em;
+  line-height: 1.08;
+  filter: drop-shadow(0 0.04em 0 rgba(58, 40, 26, 0.25));
+}
+.stand__counter {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 2em;
+  border-radius: 0.3em;
+  background: linear-gradient(var(--wood) 0 48%, var(--wood-dark) 48% 52%, #b27c45 52%);
+  box-shadow: 0 0.25em 0 rgba(58, 40, 26, 0.25);
+  color: #fff8ea;
+  font-weight: 900;
+  font-size: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  text-shadow: 0 0.08em 0 rgba(58, 40, 26, 0.55);
+}
+.stand__tag {
+  position: absolute;
+  z-index: 4;
+  right: -0.25em;
+  top: 2.5em;
+  min-width: 2em;
+  padding: 0.1em 0.4em 0.1em 0.7em;
+  border-radius: 0.3em;
+  background: var(--paper);
+  border: 0.1em solid var(--ink);
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 1.7em;
+  line-height: 1.2;
+  text-align: center;
+  transform: rotate(8deg);
+  box-shadow: 0 0.12em 0 rgba(58, 40, 26, 0.3);
+}
+.stand__tag::before {
+  content: '';
+  position: absolute;
+  left: 0.2em;
+  top: 50%;
+  width: 0.24em;
+  height: 0.24em;
+  margin-top: -0.12em;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.stand__tag--secret { font-size: 1.05em; background: #5b3d8a; color: #fff; border-color: #33205a; padding-left: 0.5em; }
+.stand__tag--secret::before { display: none; }
+.stand__tag--locked { background: var(--leaf); color: #fff; border-color: var(--leaf-dark); }
+.stand__note {
+  position: absolute;
+  z-index: 3;
+  top: 4.4em;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.8em;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.stand.is-dim .stand__fruit { opacity: 0.3; }
+
+/* The cloth that hides a secret stand. It drops from behind the awning. */
+.stand__cloth {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: repeating-linear-gradient(135deg, #5b3d8a 0 0.7em, #6c4aa3 0.7em 1.4em);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-105%);
+  transition: transform 0.7s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+.stand__cloth span { font-size: 3em; }
+.stand.is-covered .stand__cloth { transform: translateY(0); }
+
+/* ---------- animation ---------- */
+
+@keyframes pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes slap {
+  0% { transform: scale(2.2) rotate(-14deg); opacity: 0; }
+  60% { transform: scale(0.92) rotate(10deg); opacity: 1; }
+  100% { transform: scale(1) rotate(8deg); opacity: 1; }
+}
+@keyframes drop {
+  0% { transform: translateY(-3em) rotate(-20deg); opacity: 0; }
+  70% { transform: translateY(0.15em) rotate(12deg); opacity: 1; }
+  100% { transform: translateY(0) rotate(8deg); opacity: 1; }
+}
+@keyframes slide {
+  0% { transform: translateY(-14px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes fade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.anim-pop { animation: pop 0.35s ease-out both; }
+.anim-slap { animation: slap 0.3s ease-out both; }
+.anim-drop { animation: drop 0.5s ease-out both; }
+.anim-slide { animation: slide 0.3s ease-out both; }
+.anim-pulse { animation: pulse 1s ease-in-out infinite; }
+.anim-fade { animation: fade 0.5s ease both; }
+
+/* Reduced motion: every movement becomes a simple fade. */
+@media (prefers-reduced-motion: reduce) {
+  .anim-pop, .anim-slap, .anim-drop, .anim-slide, .anim-fade {
+    animation: fade 0.4s ease both !important;
+  }
+  .anim-pulse { animation: none !important; }
+  .btn { transition: none; }
+  .btn:active { transform: none; }
+  .stand__cloth { transform: none; opacity: 0; transition: opacity 0.5s ease; }
+  .stand.is-covered .stand__cloth { transform: none; opacity: 1; }
+}

@@ -1,0 +1,48 @@
+{
+  "slides": [
+    {
+      "art": "welcome",
+      "title": "Welcome to Fruit Stand 🍎",
+      "text": "You and a partner run fruit stands. Most money at the end wins."
+    },
+    {
+      "art": "fruit",
+      "title": "Your fruit",
+      "text": "You get one fruit and keep it all game. One other player sells the same fruit: your rival. Your partner sells a different fruit."
+    },
+    {
+      "art": "price",
+      "title": "Set your price",
+      "text": "Each round, secretly pick $1–$5 on your phone and press Submit. You have 5 minutes. No pick = $5."
+    },
+    {
+      "art": "cheapest",
+      "title": "Cheapest wins",
+      "text": "The lowest price sells ALL of that fruit. Ties split."
+    },
+    {
+      "art": "talk",
+      "title": "Talk, deal, betray",
+      "text": "Find your rival, make deals… or break them. Results show only each fruit's lowest price, never who set it."
+    },
+    {
+      "art": "change",
+      "title": "Change token 🔄",
+      "text": "Once per game, switch to another fruit before you submit. Everyone is told."
+    },
+    {
+      "art": "partners",
+      "title": "Partners",
+      "text": "Rounds 1–2 with one partner, rounds 3–4 with a new one. Your score = half of each team's earnings."
+    },
+    {
+      "art": "winning",
+      "title": "Winning 🏆",
+      "text": "Nobody sees totals until the end. Final standings are revealed after round 4."
+    }
+  ],
+  "secretIntro": {
+    "title": "🙈 Secret Market!",
+    "text": "These fruits' prices stay hidden until the end — even from their sellers."
+  }
+}

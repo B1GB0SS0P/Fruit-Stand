@@ -1,0 +1,108 @@
+/* How to Play. One idea per slide, sized to fill a projector or a phone. */
+
+.slides-body { overflow: hidden; }
+
+.deck {
+  --u: min(1vw, 1.7vh);
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--u) * 2.5) calc(var(--u) * 4) calc(var(--u) * 2);
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+.slide { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: calc(var(--u) * 2); }
+.slide__title { font-size: calc(var(--u) * 6.4); }
+.slide__art {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 4);
+  font-size: calc(var(--u) * 1.7);
+}
+.slide__text { font-size: calc(var(--u) * 3.9); font-weight: 800; max-width: 26em; line-height: 1.3; }
+
+.deck__foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: calc(var(--u) * 1.5); }
+.dots { display: flex; gap: 8px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line); }
+.dot.is-on { background: var(--tomato); transform: scale(1.3); }
+.deck__nav { display: flex; gap: 8px; }
+
+@media (orientation: portrait) {
+  .deck { --u: 1.55vw; padding: 14px 14px 12px; }
+  .slide__title { font-size: calc(var(--u) * 5.4); }
+  .slide__text { font-size: calc(var(--u) * 3.3); }
+  .slide__art { font-size: calc(var(--u) * 1.85); gap: calc(var(--u) * 2.5); }
+}
+
+/* ---------- illustration pieces ---------- */
+
+.art-col { display: flex; flex-direction: column; align-items: center; gap: 0.8em; }
+.art-row { display: flex; align-items: flex-end; justify-content: center; gap: 1.6em; }
+.art-label { font-weight: 900; font-size: 1.25em; }
+.art-label small { display: block; font-weight: 800; color: var(--ink-soft); font-size: 0.8em; }
+.art-big { font-size: 5em; line-height: 1; }
+.art-arrow { font-size: 3.4em; font-weight: 900; color: var(--ink-soft); align-self: center; }
+.art-avatar {
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 0.12em solid var(--sun);
+  font-size: 2.3em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0.1em 0 rgba(58, 40, 26, 0.18);
+}
+.art-pair { display: flex; align-items: center; gap: 0.5em; padding: 0.6em 0.9em; }
+.art-pair span { font-weight: 900; font-size: 1.5em; }
+.art-stickers { display: flex; gap: 0.5em; }
+.art-sticker {
+  width: 2.2em;
+  height: 2.2em;
+  border: 0.12em solid var(--ink);
+  border-radius: 0.4em 0.4em 0.4em 0.12em;
+  background: var(--paper);
+  font-size: 2em;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-4deg);
+  box-shadow: 0 0.12em 0 rgba(58, 40, 26, 0.3);
+}
+.art-sticker:nth-child(even) { transform: rotate(4deg); }
+.art-sticker.is-picked { background: var(--sun); transform: scale(1.15); }
+.art-clock { background: var(--chalk); color: #fff; border-radius: 999px; padding: 0.1em 0.8em; font-size: 2.6em; font-weight: 900; }
+.art-money { font-size: 2em; font-weight: 900; border-radius: 0.4em; padding: 0.1em 0.6em; }
+.art-money.win { background: var(--leaf); color: #fff; }
+.art-money.lose { background: #f3d6cc; color: #8f2b0e; }
+.art-bubble {
+  background: var(--paper);
+  border: 0.12em solid var(--line);
+  border-radius: 1em;
+  padding: 0.4em 0.9em;
+  font-size: 1.5em;
+  font-weight: 900;
+  box-shadow: 0 0.14em 0 rgba(58, 40, 26, 0.14);
+}
+.art-board { background: var(--chalk); color: #fff; border-radius: 0.8em; padding: 0.8em 1.2em; font-size: 1.4em; font-weight: 900; text-align: left; line-height: 1.6; }
+.art-board small { display: block; color: #b9c7bf; font-size: 0.75em; }
+.art-podium { display: flex; align-items: flex-end; gap: 0.5em; }
+.art-step { width: 6em; border-radius: 0.6em 0.6em 0 0; font-size: 1.4em; font-weight: 900; color: var(--ink); display: flex; align-items: center; justify-content: center; }
+.art-step.one { height: 6em; background: var(--sun); }
+.art-step.two { height: 4.2em; background: #a9b4bd; }
+.art-step.three { height: 2.8em; background: #c98a52; color: #fff; }
+
+@media (orientation: portrait) {
+  .art-wide { flex-direction: column; align-items: center; gap: 1.5em; }
+}

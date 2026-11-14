@@ -25,7 +25,10 @@ const ART = {
 
   fruit: () => [
     col(makeStand(APPLE), label('You', '🐼')),
-    col(makeStand(APPLE), label('Your rival', '🦊 same fruit')),
+    col(
+      h('div', { class: 'art-row art-tight' }, makeStand(APPLE), makeStand(APPLE)),
+      label('Your competition', '🦊 🐯 same fruit'),
+    ),
     col(makeStand(GRAPE), label('Your partner', '🐸 different fruit')),
   ],
 
@@ -41,10 +44,11 @@ const ART = {
   cheapest: () => [
     h('div', { class: 'art-row art-wide' },
       h('div', { class: 'art-row' },
-        col(makeStand(APPLE, { tag: '$4' }), label('You'), h('div', { class: 'art-money lose' }, 'earn $0')),
-        col(makeStand(APPLE, { tag: '$3' }), label('Rival'), h('div', { class: 'art-money win' }, '2 × $3 = $6')),
+        col(makeStand(APPLE, { tag: '$5' }), h('div', { class: 'art-money lose' }, 'earns $0')),
+        col(makeStand(APPLE, { tag: '$5' }), h('div', { class: 'art-money lose' }, 'earns $0')),
+        col(makeStand(APPLE, { tag: '$4' }), h('div', { class: 'art-money win' }, '3 × $4 = $12')),
       ),
-      h('div', { class: 'art-board' }, 'Both $5 → $5 each', h('small', null, 'Ties split the sales')),
+      h('div', { class: 'art-board' }, 'All three $5 → $5 each', h('small', null, 'Ties split the sales')),
     ),
   ],
 
@@ -88,7 +92,7 @@ function show(next) {
   deck.replaceChildren(
     h('section', { class: 'slide anim-fade' },
       h('h1', { class: 'slide__title' }, slide.title),
-      h('div', { class: 'slide__art' }, art),
+      h('div', { class: `slide__art art-${slide.art}` }, art),
       h('p', { class: 'slide__text' }, slide.text),
     ),
     h('footer', { class: 'deck__foot' },

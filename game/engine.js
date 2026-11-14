@@ -21,6 +21,12 @@ export function createGame({ code, seed = Date.now(), config = {} }) {
     status: 'lobby', // lobby | bidding | results | reveal | final
     locked: false,
     players: [], // { id, token, rejoinCode, name, avatar, ring, fruit, tokens }
+    // Predictors hold a seat like a player (same id, token, name, avatar)
+    // but are never dealt a fruit, never bid and are in no team.
+    predictors: [], // { id, token, rejoinCode, name, avatar, ring }
+    predictions: {}, // predictor id or 'host' -> { medianCents, winner, middle }
+    predictionsLocked: false,
+    hostPlaying: false, // the host says they are also a player
     nextPlayerNumber: 1,
     revokedTokens: [],
     round: 0,
@@ -39,7 +45,12 @@ export const phaseOf = (config, round) => (round <= config.phase1LastRound ? 1 :
 export const currentRound = (state) => state.rounds[state.round - 1] || null;
 export const findPlayer = (state, id) => state.players.find((p) => p.id === id) || null;
 export const findPlayerByToken = (state, token) => state.players.find((p) => p.token === token) || null;
-export const isRevoked = (state, token) => state.revokedTokens.includes(token);
+export const findPredictor = (state, id) => state.predictors.find((p) => p.id === id) || null;
+// Everyone holding a seat in the room: players and predictors.
+export const seats = (state) => [...state.players, ...state.predictors];
+export const findSeatByToken = (state, token) => seats(state).find((p) => p.token === token) || null;
+export const HOST_ID = 'host';
+export const isRevoked =(state, token) => state.revokedTokens.includes(token);
 export const fruitName = (config, id) => config.fruits.find((f) => f.id === id)?.name ?? id;
 
 export function teammateOf(state, playerId, phase) {
@@ -59,7 +70,7 @@ export function changeTargetsFor(state, player) {
 // room stays unique however many players pick the same animal.
 export function freeRing(state, avatar) {
   const listed = state.config.avatarRingColors.map((color) => color.toLowerCase());
-  const taken = new Set(state.players.filter((p) => p.avatar === avatar).map((p) => p.ring));
+  const taken = new Set(seats(state).filter((p) => p.avatar === avatar).map((p) => p.ring));
   for (const ring of listed) {
     if (!taken.has(ring)) return ring;
   }
@@ -99,14 +110,14 @@ export function checkName(state, name) {
   const clean = typeof name === 'string' ? name.trim().replace(/\s+/g, ' ') : '';
   const length = [...clean].length;
   if (length < 1 || length > 20) return fail('bad_name', 'Your name must be 1 to 20 characters.');
-  if (state.players.some((p) => p.name.toLowerCase() === clean.toLowerCase())) {
+  if (seats(state).some((p) => p.name.toLowerCase() === clean.toLowerCase())) {
     return fail('name_taken', 'That name is taken. Please pick another.');
   }
   return ok({ name: clean });
 }
 
 export function addPlayer(state, { name, avatar, token, rejoinCode = null }) {
-  const existing = findPlayerByToken(state, token);
+  const existing = findSeatByToken(state, token);
   if (existing) return ok({ player: existing, existing: true });
 
   const joinable = checkJoinable(state);
@@ -135,11 +146,48 @@ export function addPlayer(state, { name, avatar, token, rejoinCode = null }) {
 
 export function removePlayer(state, playerId) {
   if (state.status !== 'lobby') return fail('in_progress', 'Players can only be removed in the lobby.');
-  const player = findPlayer(state, playerId);
+  const player = findPlayer(state, playerId) || findPredictor(state, playerId);
   if (!player) return fail('unknown_player', 'That player is not in the room.');
   state.players = state.players.filter((p) => p.id !== playerId);
+  state.predictors = state.predictors.filter((p) => p.id !== playerId);
   state.revokedTokens.push(player.token);
   return ok({ player });
+}
+
+// Turns a player into a predictor. They keep their seat, name and avatar
+// but leave the player list, so they are not counted, paired or dealt a fruit.
+export function makePredictor(state, playerId) {
+  if (state.status !== 'lobby') return fail('in_progress', 'Predictors can only be chosen in the lobby.');
+  const player = findPlayer(state, playerId);
+  if (!player) return fail('unknown_player', 'That player is not in the room.');
+  const max = state.config.maxPredictors;
+  if (state.predictors.length >= max) {
+    return fail('too_many_predictors', max === 0 ? 'Predictors are turned off.' : `A room can have at most ${max} predictor${max === 1 ? '' : 's'}.`);
+  }
+  state.players = state.players.filter((p) => p.id !== playerId);
+  const { id, token, rejoinCode, name, avatar, ring } = player;
+  const predictor = { id, token, rejoinCode, name, avatar, ring };
+  state.predictors.push(predictor);
+  return ok({ predictor });
+}
+
+// Turns a predictor back into a player.
+export function makePlayer(state, predictorId) {
+  if (state.status !== 'lobby') return fail('in_progress', 'Predictors can only be changed in the lobby.');
+  const predictor = findPredictor(state, predictorId);
+  if (!predictor) return fail('unknown_player', 'That predictor is not in the room.');
+  if (state.config.maxPlayers > 0 && state.players.length >= state.config.maxPlayers) {
+    return fail('room_full', 'The room is full of players already.');
+  }
+  state.predictors = state.predictors.filter((p) => p.id !== predictorId);
+  const player = { ...predictor, fruit: null, tokens: 0 };
+  state.players.push(player);
+  return ok({ player });
+}
+
+export function setHostPlaying(state, playing) {
+  state.hostPlaying = Boolean(playing);
+  return ok();
 }
 
 export function setLocked(state, locked) {
@@ -150,7 +198,7 @@ export function setLocked(state, locked) {
 // Moves a seat to a new browser. Used when a player has lost their token.
 export function claimSeat(state, rejoinCode, newToken) {
   const wanted = String(rejoinCode ?? '').trim().toUpperCase();
-  const player = wanted && state.players.find((p) => p.rejoinCode && p.rejoinCode.toUpperCase() === wanted);
+  const player = wanted && seats(state).find((p) => p.rejoinCode && p.rejoinCode.toUpperCase() === wanted);
   if (!player) return fail('bad_rejoin_code', "That rejoin code isn't right. Check with the host.");
   if (typeof newToken !== 'string' || !newToken) return fail('bad_token', 'Something went wrong. Please try again.');
   player.token = newToken;
@@ -186,6 +234,8 @@ export function startGame(state, now) {
   state.round = 0;
   state.rounds = [];
   state.announcements = [];
+  state.predictions = {};
+  state.predictionsLocked = false;
   openRound(state, now);
   return ok();
 }
@@ -198,8 +248,12 @@ export function reset(state, { keepPlayers }) {
     }
   } else {
     state.players = [];
+    state.predictors = [];
     state.revokedTokens = [];
+    state.hostPlaying = false;
   }
+  state.predictions = {};
+  state.predictionsLocked = false;
   state.status = 'lobby';
   state.locked = false;
   state.round = 0;
@@ -218,6 +272,7 @@ function openRound(state, now) {
   state.round += 1;
   const n = state.round;
   const phase = phaseOf(config, n);
+  if (n >= config.predictionLockRound) state.predictionsLocked = true;
 
   if (phase === 2 && !state.teams[2]) {
     const ids = state.players.map((p) => p.id);
@@ -283,6 +338,9 @@ function resolveIfComplete(state, now) {
 // Shared checks for anything a player does during bidding.
 function biddingGuard(state, playerId, roundNumber, now) {
   const player = findPlayer(state, playerId);
+  if (!player && findPredictor(state, playerId)) {
+    return { error: fail('is_predictor', "Predictors watch the market. They can't bid or Change.") };
+  }
   if (!player) return { error: fail('unknown_player', 'You are not in this game.') };
   if (state.status !== 'bidding') return { error: fail('round_closed', 'This round is closed.') };
   if (roundNumber !== state.round) return { error: fail('stale_round', 'That was for an earlier round.') };
@@ -429,11 +487,63 @@ export function revealSecrets(state) {
     return fail('not_finished', 'The last round has not finished yet.');
   }
   state.status = 'reveal';
+  state.predictionsLocked = true;
+  return ok();
+}
+
+// "Predictors vs Host": everyone's predictions and scores go public.
+export function revealPredictions(state) {
+  if (state.status !== 'reveal') return fail('not_revealed', 'Reveal the secret prices first.');
+  state.status = 'predictions';
   return ok();
 }
 
 export function showStandings(state) {
-  if (state.status !== 'reveal') return fail('not_revealed', 'Reveal the secret prices first.');
+  if (state.status !== 'reveal' && state.status !== 'predictions') {
+    return fail('not_revealed', 'Reveal the secret prices first.');
+  }
   state.status = 'final';
   return ok();
+}
+
+// ---------- predictions ----------
+
+const MAX_MEDIAN_CENTS = 99_999_99;
+
+// "$12.5", "12.50" or 12.5 -> 1250. Null for anything that is not a plain
+// dollar amount with at most 2 decimal places.
+export function parseCents(value) {
+  const text = (typeof value === 'number' ? String(value) : typeof value === 'string' ? value : '').trim().replace(/^\$/, '');
+  if (!/^\d{1,7}(\.\d{1,2})?$/.test(text)) return null;
+  const [dollars, cents = ''] = text.split('.');
+  const total = Number(dollars) * 100 + Number(cents.padEnd(2, '0'));
+  return total <= MAX_MEDIAN_CENTS ? total : null;
+}
+
+const emptyPrediction = () => ({ medianCents: null, winner: null, middle: null });
+
+export function predictionOf(state, who) {
+  return state.predictions[who] || emptyPrediction();
+}
+
+export const predictionComplete = (prediction) =>
+  prediction.medianCents !== null && prediction.winner !== null && prediction.middle !== null;
+
+// Saves all three answers for a predictor (by id) or the host (HOST_ID).
+// Any answer may be null, meaning "not answered yet".
+export function savePrediction(state, who, { median = null, winner = null, middle = null } = {}) {
+  if (who !== HOST_ID && !findPredictor(state, who)) return fail('not_predictor', 'Only predictors and the host can predict.');
+  if (state.status === 'lobby') return fail('not_started', 'Predictions open when the game starts.');
+  if (state.predictionsLocked) return fail('predictions_locked', 'Predictions are locked.');
+
+  const blank = median === null || median === '';
+  const medianCents = blank ? null : parseCents(median);
+  if (!blank && medianCents === null) {
+    return fail('bad_median', 'Enter the median as dollars and cents, like 14.50.');
+  }
+  for (const pick of [winner, middle]) {
+    if (pick !== null && !findPlayer(state, pick)) return fail('bad_pick', 'Pick a player from the list.');
+  }
+  state.predictions[who] = { medianCents, winner, middle };
+  return ok({ prediction: state.predictions[who] });
 }

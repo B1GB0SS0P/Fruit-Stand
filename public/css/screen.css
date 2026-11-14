@@ -273,3 +273,141 @@
 .notice p { font-size: 4vh; font-weight: 800; }
 .notice form { display: flex; gap: 1vw; }
 .notice .input { width: 16em; }
+
+/* ---------- lobby: predictors ---------- */
+
+.person--predictor { border-color: #8e5bd0; background: #f3ecfc; }
+.person--predictor b { font-weight: 400; }
+
+/* ---------- Predictors vs Host ---------- */
+
+.pvh { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2vh; }
+.pvh__head { flex: none; text-align: center; }
+.pvh__head h1 { font-size: 7vh; }
+.pvh__head p { font-size: 3.6vh; font-weight: 800; color: var(--soft); min-height: 5vh; }
+.pvh__stage { flex: 1; min-height: 0; display: flex; }
+.pvh__q { flex: 1; min-height: 0; display: grid; grid-template-columns: 36vw 1fr; gap: 2.4vw; align-items: stretch; }
+
+/* The actual answer, on a chalkboard. */
+.pvh-actual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2vh;
+  padding: 2.4vh 2vw;
+  background: var(--chalk);
+  color: #f4f1e4;
+  border: 1vh solid var(--wood);
+  border-radius: 3vh;
+  text-align: center;
+  box-shadow: 0 1.2vh 0 rgba(0, 0, 0, 0.3);
+}
+.pvh-actual__label { font-size: 5.4vh; font-weight: 900; line-height: 1.1; }
+.pvh-actual__sub { font-size: 2.8vh; font-weight: 800; color: #b9c7bf; }
+.pvh-actual__value { min-height: 17vh; display: flex; align-items: center; justify-content: center; }
+.pvh-actual__tag { font-size: 2.4vh; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #ffe08a; }
+.pvh-money { font-size: 13vh; line-height: 1; font-weight: 900; color: #ffe08a; font-variant-numeric: tabular-nums; }
+.pvh-faces { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1.2vh 1.2vw; }
+.pvh-face { display: inline-flex; align-items: center; gap: 0.4em; font-size: 4.2vh; font-weight: 900; min-width: 0; }
+.pvh-face > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9em; }
+.pvh-faces .pvh-face:nth-child(n + 3) { font-size: 3.4vh; }
+
+/* One row per predictor, then the host. */
+.pvh-rows { display: flex; flex-direction: column; justify-content: center; gap: 1.6vh; min-width: 0; }
+.pvh-row {
+  flex: 1;
+  max-height: 15vh;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 30% 1fr 9.5vw;
+  align-items: center;
+  gap: 1.4vw;
+  padding: 0 1.6vw;
+  background: var(--paper);
+  color: var(--ink);
+  --soft: var(--ink-soft);
+  border: 0.5vh solid var(--line);
+  border-radius: 2.4vh;
+  box-shadow: 0 0.8vh 0 rgba(0, 0, 0, 0.22);
+}
+.pvh-row__who { display: flex; align-items: center; gap: 0.5em; font-size: 4vh; font-weight: 900; min-width: 0; }
+.pvh-row__who span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pvh-row__answer { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.15; }
+.pvh-row__answer .pvh-face { font-size: 3.8vh; }
+.pvh-row__answer small { font-size: 2.5vh; font-weight: 800; color: var(--ink-soft); }
+.pvh-guess { font-size: 5.6vh; font-weight: 900; font-variant-numeric: tabular-nums; }
+.pvh-none { font-size: 3.4vh; font-weight: 800; color: #a83a1b; }
+.pvh-row__points {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.15em;
+  padding: 0.6vh 0;
+  border-radius: 2vh;
+  background: var(--leaf);
+  color: #fff;
+  font-size: 6.4vh;
+  font-weight: 900;
+  line-height: 1.1;
+}
+.pvh-row__points.is-zero { background: #b7a999; }
+.pvh-row__points small { font-size: 2.4vh; font-weight: 800; margin-left: 0.2em; }
+.pvh-plus { font-size: 0.7em; }
+
+/* Counting up: a strip of digits slides through a one-line window. */
+.countup { display: inline-block; height: 1.1em; line-height: 1.1; overflow: hidden; vertical-align: bottom; }
+.countup__strip { display: flex; flex-direction: column; transform: translateY(calc(var(--n) * -1.1em)); animation: countup 0.9s steps(var(--n), end) both; }
+.countup__strip > span { height: 1.1em; }
+@keyframes countup {
+  from { transform: translateY(0); }
+  to { transform: translateY(calc(var(--n) * -1.1em)); }
+}
+
+/* Running totals along the bottom. */
+.pvh__totals { flex: none; display: flex; justify-content: center; gap: 1.6vw; transition: opacity 0.4s ease; }
+.pvh-total {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.8vh 1.4vw 0.8vh 0.9vw;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 0.4vh solid var(--line);
+  font-size: 3.2vh;
+  font-weight: 900;
+  min-width: 0;
+}
+.pvh-total__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 10em; }
+.pvh-total b { min-width: 1.6em; padding: 0 0.4em; border-radius: 999px; background: #4a2d7a; color: #fff; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* The predictor scoreboard that ends the reveal. */
+.pvh-board { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 2vh; padding: 0 8vw; }
+.pvh-board__row {
+  display: grid;
+  grid-template-columns: 8vw auto 1fr auto 13vw;
+  align-items: center;
+  gap: 1.6vw;
+  padding: 1.6vh 2vw;
+  background: var(--paper);
+  color: var(--ink);
+  border: 0.5vh solid var(--line);
+  border-radius: 2.4vh;
+  box-shadow: 0 0.8vh 0 rgba(0, 0, 0, 0.22);
+  font-size: 4.4vh;
+  font-weight: 900;
+}
+.pvh-board__row.is-won { background: #fff0c2; border-color: var(--sun); font-size: 5.4vh; }
+.pvh-board__place { text-align: center; }
+.pvh-board__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pvh-board__parts { display: flex; gap: 1.6vw; font-size: 2.6vh; font-weight: 800; color: var(--ink-soft); white-space: nowrap; }
+.pvh-board__parts b { color: var(--ink); font-size: 1.25em; }
+.pvh-board__score { text-align: right; font-variant-numeric: tabular-nums; }
+.pvh-board__score small { font-size: 0.5em; color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  .countup__strip { animation: none; }
+}
+.top__left p { line-height: 1.2; white-space: nowrap; }
+.top__left .top__note { font-size: 2.3vh; }

@@ -2,7 +2,7 @@
 // each recipient their own view.
 
 import * as engine from '../game/engine.js';
-import { playerView, screenView, hostView, publicConfig } from '../game/views.js';
+import { playerView, predictorView, screenView, hostView, publicConfig } from '../game/views.js';
 import { resultsCsv } from '../game/csv.js';
 import { exportSnapshot, importSnapshot } from '../game/snapshot.js';
 import { samePassword } from './seal.js';
@@ -37,7 +37,10 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
   function sendState(socket, room) {
     const { role, playerId } = socket.data;
     if (role === 'player') {
-      const view = playerView(room.state, playerId, now());
+      // A seat is a player or a predictor; the host can switch it in the lobby.
+      const view = engine.findPredictor(room.state, playerId)
+        ? predictorView(room.state, playerId, now())
+        : playerView(room.state, playerId, now());
       if (view) socket.emit('state', ambientOnce(socket, room, view));
       else leave(socket, { reason: 'gone', message: 'Your seat is no longer in this game.' });
     } else if (role === 'screen') {
@@ -46,6 +49,7 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
       const view = hostView(room.state, now());
       const online = new Set([...room.sockets].map((s) => s.data.playerId));
       view.players = view.players.map((p) => ({ ...p, connected: online.has(p.id) }));
+      view.predictors = view.predictors.map((p) => ({ ...p, connected: online.has(p.id) }));
       socket.emit('state', ambientOnce(socket, room, view));
     }
   }
@@ -210,7 +214,7 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
       if (engine.isRevoked(room.state, token)) {
         return { ok: false, error: 'removed', message: "You've been assigned a separate task — please see the host." };
       }
-      const player = typeof token === 'string' ? engine.findPlayerByToken(room.state, token) : null;
+      const player = typeof token === 'string' ? engine.findSeatByToken(room.state, token) : null;
       if (!player) return { ok: false, error: 'unknown_token', message: 'Your seat was not found. Please join again.' };
       attach(socket, room, 'player', player.id);
       room.lastActivity = now();
@@ -256,6 +260,18 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
       for (const s of room.sockets) s.emit('announcement', announcement);
       changed(room);
       return { ok: true, fruit };
+    });
+
+    // A predictor's answers. Only their own screens and the host's list of
+    // who has answered change, so nobody else is sent anything.
+    asPlayer(socket, 'predictor:save', (room, playerId, { median, winner, middle }) => {
+      const result = engine.savePrediction(room.state, playerId, { median, winner, middle });
+      if (!result.ok) return brief(result);
+      room.lastActivity = now();
+      for (const s of room.sockets) if (s.data.playerId === playerId) sendState(s, room);
+      notifyHosts(room);
+      autosave(room);
+      return { ok: true };
     });
 
     // ----- projector -----
@@ -324,6 +340,28 @@ export function createGameServer({ io, store, timers, hostPassword, sealer, conf
       return { ok: true };
     });
 
+    asRoomHost(socket, 'host:makePredictor', (room, { playerId }) => apply(room, engine.makePredictor(room.state, playerId)));
+    asRoomHost(socket, 'host:makePlayer', (room, { predictorId }) => apply(room, engine.makePlayer(room.state, predictorId)));
+
+    // The host's own predictions. Only host screens are updated.
+    asRoomHost(socket, 'host:predict', (room, { median, winner, middle }) => {
+      const result = engine.savePrediction(room.state, engine.HOST_ID, { median, winner, middle });
+      if (!result.ok) return brief(result);
+      room.lastActivity = now();
+      notifyHosts(room);
+      autosave(room);
+      return { ok: true };
+    });
+
+    asRoomHost(socket, 'host:playing', (room, { playing }) => {
+      engine.setHostPlaying(room.state, playing === true);
+      room.lastActivity = now();
+      notifyHosts(room);
+      autosave(room);
+      return { ok: true };
+    });
+
+    asRoomHost(socket, 'host:predictions', (room) => apply(room, engine.revealPredictions(room.state)));
     asRoomHost(socket, 'host:lock', (room, { locked }) => apply(room, engine.setLocked(room.state, locked === true)));
     asRoomHost(socket, 'host:start', (room) => apply(room, engine.startGame(room.state, now())));
     asRoomHost(socket, 'host:next', (room) => apply(room, engine.nextRound(room.state, now())));

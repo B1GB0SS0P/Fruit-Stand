@@ -33,6 +33,61 @@ describe('scoring a fruit', () => {
     expect(scoreRound(fruitOf, { a: 1, b: 1, c: 1 }).earnings).toEqual({ a: frac(1), b: frac(1), c: frac(1) });
   });
 
+  it('handles four sellers: a single lowest seller, a 2-way tie and a 4-way tie', () => {
+    const fruitOf = { a: 'mango', b: 'mango', c: 'mango', d: 'mango' };
+
+    const single = scoreRound(fruitOf, { a: 5, b: 5, c: 4, d: 5 });
+    expect(single.results.mango).toEqual({ units: 4, lowest: 4, winners: 1 });
+    expect(single.earnings).toEqual({ a: ZERO, b: ZERO, c: frac(16), d: ZERO });
+
+    const twoWay = scoreRound(fruitOf, { a: 3, b: 5, c: 3, d: 4 });
+    expect(twoWay.results.mango).toEqual({ units: 4, lowest: 3, winners: 2 });
+    expect(twoWay.earnings).toEqual({ a: frac(6), b: ZERO, c: frac(6), d: ZERO });
+
+    const fourWay = scoreRound(fruitOf, { a: 5, b: 5, c: 5, d: 5 });
+    expect(fourWay.results.mango).toEqual({ units: 4, lowest: 5, winners: 4 });
+    expect(fourWay.earnings).toEqual({ a: frac(5), b: frac(5), c: frac(5), d: frac(5) });
+
+    // A 3-way tie among 4 splits 4 x $2 = $8 three ways, exactly.
+    const threeWay = scoreRound(fruitOf, { a: 2, b: 2, c: 2, d: 3 });
+    expect(threeWay.earnings.a).toEqual(frac(8, 3));
+    expect(equal([threeWay.earnings.a, threeWay.earnings.b, threeWay.earnings.c].reduce(add, ZERO), frac(8))).toBe(true);
+  });
+
+  it('handles the How to Play example: three sellers at $5, $5 and $4', () => {
+    const fruitOf = { a: 'apple', b: 'apple', c: 'apple' };
+    expect(scoreRound(fruitOf, { a: 5, b: 5, c: 4 }).earnings).toEqual({ a: ZERO, b: ZERO, c: frac(12) });
+    expect(scoreRound(fruitOf, { a: 5, b: 5, c: 5 }).earnings).toEqual({ a: frac(5), b: frac(5), c: frac(5) });
+  });
+
+  it('handles five sellers, with and without ties', () => {
+    const fruitOf = { a: 'pear', b: 'pear', c: 'pear', d: 'pear', e: 'pear' };
+    expect(scoreRound(fruitOf, { a: 5, b: 4, c: 3, d: 2, e: 1 }).earnings).toEqual({ a: ZERO, b: ZERO, c: ZERO, d: ZERO, e: frac(5) });
+    expect(scoreRound(fruitOf, { a: 4, b: 4, c: 5, d: 5, e: 5 }).earnings).toEqual({ a: frac(10), b: frac(10), c: ZERO, d: ZERO, e: ZERO });
+    const allTie = scoreRound(fruitOf, { a: 3, b: 3, c: 3, d: 3, e: 3 });
+    expect(allTie.results.pear).toEqual({ units: 5, lowest: 3, winners: 5 });
+    expect(Object.values(allTie.earnings).every((e) => equal(e, frac(3)))).toBe(true);
+  });
+
+  it('pays out lowest x sellers in every market of a dealt 40-player game', () => {
+    const game = started(40, { seed: 4 });
+    const random = testRandom(40);
+    for (const p of game.players) submit(game, p.id, 1, 1 + Math.floor(random() * 5), NOW);
+    const round = game.rounds[0];
+    for (const [fruit, group] of Object.entries(sellers(game))) {
+      expect(group).toHaveLength(4);
+      const bids = group.map((p) => round.selections[p.id]);
+      const lowest = Math.min(...bids);
+      const paid = group.map((p) => round.earnings[p.id]).reduce(add, ZERO);
+      expect(equal(paid, frac(lowest * 4))).toBe(true);
+      for (const p of group) {
+        const share = round.selections[p.id] === lowest ? frac(lowest * 4, bids.filter((b) => b === lowest).length) : ZERO;
+        expect(equal(round.earnings[p.id], share)).toBe(true);
+      }
+      expect(round.results[fruit].units).toBe(4);
+    }
+  });
+
   it('keeps awkward splits exact', () => {
     const fruitOf = { a: 'kiwi', b: 'kiwi', c: 'kiwi', d: 'kiwi', e: 'kiwi' };
     const { earnings } = scoreRound(fruitOf, { a: 1, b: 1, c: 1, d: 4, e: 5 });

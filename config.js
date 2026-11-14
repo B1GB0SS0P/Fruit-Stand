@@ -33,7 +33,16 @@ export const defaultConfig = {
     '🐔', '🦄', '🐙', '🐢', '🐝', '🦉', '🐳', '🦋',
   ],
 
-  sellersPerFruit: 2, // target sellers per fruit; must be 2 or more
+  // The market grows with the room:
+  //   sellers per fruit = max(minSellersPerFruit, ceil(players / sellersDivisor))
+  // With the defaults: 2 sellers up to 20 players, 3 up to 30, 4 up to 40.
+  minSellersPerFruit: 2, // must be 2 or more
+  sellersDivisor: 10,
+
+  // Predictors watch the game and guess how it ends. The host predicts too.
+  maxPredictors: 3, // predictors per room, not counting the host
+  predictionLockRound: 3, // predictions lock when this round starts
+
   changeTargets: 'active', // 'active' = fruits in play, 'any' = whole pool
   minPrice: 1,
   maxPrice: 5,
@@ -84,7 +93,11 @@ export function resolveConfig(overrides = {}) {
   if (!Array.isArray(c.fruits) || c.fruits.length < 2) problems.push('fruits needs at least 2 entries');
   if (new Set(c.fruits.map((f) => f.id)).size !== c.fruits.length) problems.push('fruit ids must be unique');
   if (!Array.isArray(c.avatars) || c.avatars.length < 1) problems.push('avatars is empty');
-  if (!int(c.sellersPerFruit) || c.sellersPerFruit < 2) problems.push('sellersPerFruit must be a whole number, 2 or more');
+  delete c.sellersPerFruit; // the old fixed setting, still present in older snapshots
+  if (!int(c.minSellersPerFruit) || c.minSellersPerFruit < 2) problems.push('minSellersPerFruit must be a whole number, 2 or more');
+  if (!int(c.sellersDivisor) || c.sellersDivisor < 1) problems.push('sellersDivisor must be a whole number, 1 or more');
+  if (!int(c.maxPredictors) || c.maxPredictors < 0) problems.push('maxPredictors must be a whole number, 0 or more');
+  if (!int(c.predictionLockRound) || c.predictionLockRound < 2) problems.push('predictionLockRound must be a whole number, 2 or more');
   if (!['active', 'any'].includes(c.changeTargets)) problems.push('changeTargets must be "active" or "any"');
   if (!int(c.minPrice) || !int(c.maxPrice) || c.minPrice < 0 || c.minPrice > c.maxPrice) problems.push('minPrice/maxPrice are invalid');
   if (!int(c.totalRounds) || c.totalRounds < 1) problems.push('totalRounds must be 1 or more');

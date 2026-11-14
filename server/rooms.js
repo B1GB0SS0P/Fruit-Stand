@@ -14,7 +14,7 @@ export const newToken = () => randomBytes(16).toString('hex');
 export const newSeed = () => randomInt(2 ** 32);
 
 export function newRejoinCode(state) {
-  const taken = new Set(state.players.map((p) => p.rejoinCode));
+  const taken = new Set([...state.players, ...(state.predictors || [])].map((p) => p.rejoinCode));
   for (;;) {
     const code = randomText(REJOIN_CHARS, 4);
     if (!taken.has(code)) return code;

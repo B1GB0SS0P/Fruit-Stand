@@ -72,10 +72,11 @@ describe('Secret Market', () => {
     for (const fruit of secret) expect(game.activeFruits).toContain(fruit);
   });
 
-  it('gives 5 secret fruits with 40 players and at least 1 with 4', () => {
+  it('gives 3 secret fruits with 40 players (10 fruits) and at least 1 with 4', () => {
     const big = started(40);
     advanceTo(big, 2);
-    expect(currentRound(big).secret).toHaveLength(5);
+    expect(big.activeFruits).toHaveLength(10);
+    expect(currentRound(big).secret).toHaveLength(3);
     const small = started(4);
     advanceTo(small, 2);
     expect(currentRound(small).secret).toHaveLength(1);
@@ -380,7 +381,7 @@ describe('results CSV', () => {
 
     const standingsStart = lines.indexOf('Final standings');
     expect(standingsStart).toBeGreaterThan(0);
-    const standingRows = lines.slice(standingsStart + 2);
+    const standingRows = lines.slice(standingsStart + 2, lines.indexOf('', standingsStart));
     expect(standingRows).toHaveLength(8);
     expect(standingRows[0].startsWith('1,')).toBe(true);
     for (const row of standingRows) expect(row.split(',')[6]).toMatch(/^\d+\.\d{2}$/);

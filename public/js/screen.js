@@ -6,6 +6,7 @@ import {
   fruitLookup, makeStand, loadContent, prefersReducedMotion, plural, avatarEl, rankLabel,
 } from './common.js';
 import { mountScene, sceneFor } from './scene.js';
+import { byPlace, placeText } from './predict.js';
 
 const app = $('#app');
 const fx = $('#fx');
@@ -115,6 +116,7 @@ function render() {
     else if (state.status === 'bidding') buildRound();
     else if (state.status === 'results') buildResults();
     else if (state.status === 'reveal') buildReveal();
+    else if (state.status === 'predictions') buildPredictions();
     else buildFinal();
   }
   update();
@@ -133,6 +135,9 @@ function topBar(center, right) {
     h('div', { class: 'top__left' },
       h('h1', null, `Round ${state.round} of ${state.totalRounds}`),
       h('p', null, `Phase ${state.phase} · Room ${state.code}`),
+      h('p', { class: 'top__note' }, state.predicting.locked
+        ? '🔮 Predictions locked'
+        : `🔮 Predictions lock at round ${state.predicting.lockRound}`),
     ),
     center,
     h('div', { class: 'top__right' }, right),
@@ -193,22 +198,30 @@ function buildLobby() {
 
 function updateLobby() {
   const crowd = $('#crowd');
-  const names = new Set(state.players.map((p) => p.name));
+  // Predictors stay in the crowd, marked with a crystal ball. A chip is
+  // redrawn when someone switches between player and predictor.
+  const people = [
+    ...state.players.map((p) => ({ ...p, key: `player:${p.name}` })),
+    ...state.predictors.map((p) => ({ ...p, key: `predictor:${p.name}`, predictor: true })),
+  ];
+  const keys = new Set(people.map((p) => p.key));
   for (const chip of [...crowd.children]) {
-    if (!names.has(chip.dataset.name)) {
-      shownPeople.delete(chip.dataset.name);
+    if (!keys.has(chip.dataset.key)) {
+      shownPeople.delete(chip.dataset.key);
       chip.remove();
     }
   }
-  for (const player of state.players) {
-    if (shownPeople.has(player.name)) continue;
-    shownPeople.add(player.name);
-    crowd.append(h('div', { class: 'person anim-pop', 'data-name': player.name },
-      avatarEl(player.avatar, player.ring), h('span', null, player.name)));
+  for (const person of people) {
+    if (shownPeople.has(person.key)) continue;
+    shownPeople.add(person.key);
+    crowd.append(h('div', { class: `person anim-pop${person.predictor ? ' person--predictor' : ''}`, 'data-key': person.key },
+      avatarEl(person.avatar, person.ring), h('span', null, person.name), person.predictor ? h('b', null, '🔮') : null));
   }
   const n = state.players.length;
-  crowd.style.setProperty('--crowd-size', n > 44 ? '2vh' : n > 28 ? '2.6vh' : n > 14 ? '3.3vh' : '4.2vh');
-  $('#count').replaceChildren(String(n), h('small', null, ` ${n === 1 ? 'player' : 'players'} in the market`));
+  const total = people.length;
+  crowd.style.setProperty('--crowd-size', total > 44 ? '2vh' : total > 40 ? '2.3vh' : total > 28 ? '2.6vh' : total > 14 ? '3.3vh' : '4.2vh');
+  $('#count').replaceChildren(String(n), h('small', null,
+    ` ${n === 1 ? 'player' : 'players'} in the market${state.predictors.length ? ` · ${plural(state.predictors.length, 'predictor')}` : ''}`));
 }
 
 // ----- a round -----
@@ -299,6 +312,151 @@ function buildReveal() {
       }, prefersReducedMotion() ? 100 : 750));
     }, 1800 + i * 2400));
   });
+}
+
+// ----- Predictors vs Host: one question at a time, then the scoreboard -----
+
+const MAX_FACES = 4;
+
+const faceEl = (p) => h('span', { class: 'pvh-face' }, avatarEl(p.avatar, p.ring), h('span', null, p.name));
+
+function faces(list) {
+  const shown = list.slice(0, MAX_FACES);
+  return [shown.map(faceEl), list.length > shown.length ? h('span', { class: 'pvh-face' }, `+${list.length - shown.length} more`) : null];
+}
+
+// Counts up from 0 to n by sliding a strip of digits: a transform, no script.
+function countUp(n) {
+  return h('span', { class: 'countup', style: `--n:${n}` },
+    h('span', { class: 'countup__strip' }, Array.from({ length: n + 1 }, (_, i) => h('span', null, String(i)))));
+}
+
+function predictionQuestions(reveal) {
+  const { actual, playerCount } = reveal;
+  const [upper, lower] = actual.middlePositions;
+  const pickAnswer = (answer) => (answer.pick
+    ? [faceEl(answer.pick), h('small', null, `finished ${placeText(answer.pick)} of ${playerCount}`)]
+    : [h('span', { class: 'pvh-none' }, 'No answer')]);
+  return [
+    {
+      key: 'median',
+      title: 'Median total',
+      sub: `The average of places ${upper} and ${lower} of ${playerCount}`,
+      actual: () => h('div', { class: 'pvh-money' }, `$${actual.median}`),
+      answer: (entry) => (entry.median.guess === null
+        ? [h('span', { class: 'pvh-none' }, 'No answer')]
+        : [h('span', { class: 'pvh-guess' }, `$${entry.median.guess}`), h('small', null, `off by $${entry.median.off}`)]),
+    },
+    {
+      key: 'winner',
+      title: 'Winner',
+      sub: actual.first.length > 1 ? 'Tied for 1st place' : '1st place',
+      actual: () => h('div', { class: 'pvh-faces' }, faces(actual.first)),
+      answer: (entry) => pickAnswer(entry.winner),
+    },
+    {
+      key: 'middle',
+      title: 'Middle player',
+      sub: `Places ${upper} and ${lower} of ${playerCount}`,
+      actual: () => h('div', { class: 'pvh-faces' }, faces(actual.middle)),
+      answer: (entry) => pickAnswer(entry.middle),
+    },
+  ];
+}
+
+function buildPredictions() {
+  const reveal = state.predictionReveal;
+  const entries = reveal.entries;
+  const questions = predictionQuestions(reveal);
+  const running = new Map(entries.map((entry) => [entry.id, 0]));
+
+  const step = h('p', { id: 'pvh-step' }, 'Three questions. Fifteen points.');
+  const stage = h('div', { class: 'pvh__stage' });
+  const totals = h('footer', { class: 'pvh__totals' }, entries.map((entry) =>
+    h('div', { class: 'pvh-total', 'data-id': entry.id },
+      avatarEl(entry.avatar, entry.ring),
+      h('span', { class: 'pvh-total__name' }, entry.name),
+      h('b', null, '0'))));
+
+  app.replaceChildren(h('section', { class: `pvh pvh--${Math.min(4, entries.length)}` },
+    h('header', { class: 'pvh__head' }, h('h1', null, '🔮 Predictors vs Host'), step),
+    stage,
+    totals,
+  ));
+
+  const quick = prefersReducedMotion();
+  const ACTUAL_MS = 1500;
+  const ANSWERS_MS = 3200;
+  const ANSWER_GAP_MS = 450;
+  const POINTS_MS = ANSWERS_MS + entries.length * ANSWER_GAP_MS + 1100;
+  const QUESTION_MS = POINTS_MS + 4200;
+
+  function ask(question, index) {
+    step.textContent = `Question ${index + 1} of ${questions.length}`;
+    const actualBox = h('div', { class: 'pvh-actual__value is-waiting' }, question.actual());
+    const rows = entries.map((entry) => ({
+      entry,
+      answer: h('div', { class: 'pvh-row__answer is-waiting' }, question.answer(entry)),
+      points: h('div', { class: 'pvh-row__points is-waiting' }),
+    }));
+    stage.replaceChildren(h('div', { class: 'pvh__q anim-fade' },
+      h('div', { class: 'pvh-actual' },
+        h('div', { class: 'pvh-actual__label' }, `${index + 1} · ${question.title}`),
+        h('div', { class: 'pvh-actual__sub' }, question.sub),
+        actualBox,
+        h('div', { class: 'pvh-actual__tag' }, 'The actual answer'),
+      ),
+      h('div', { class: 'pvh-rows' }, rows.map((row) => h('div', { class: 'pvh-row' },
+        h('div', { class: 'pvh-row__who' }, avatarEl(row.entry.avatar, row.entry.ring), h('span', null, row.entry.name)),
+        row.answer,
+        row.points))),
+    ));
+
+    const show = (el, anim) => {
+      el.classList.remove('is-waiting');
+      el.classList.add(anim);
+    };
+    // 1. the actual answer, 2. everyone's answer beside it, 3. the points.
+    later(() => show(actualBox, 'anim-pop'), ACTUAL_MS);
+    rows.forEach((row, i) => later(() => show(row.answer, 'anim-slide'), ANSWERS_MS + i * ANSWER_GAP_MS));
+    later(() => {
+      for (const row of rows) {
+        const got = row.entry[question.key].points;
+        row.points.replaceChildren(h('span', { class: 'pvh-plus' }, '+'), quick ? String(got) : countUp(got), h('small', null, got === 1 ? 'pt' : 'pts'));
+        row.points.classList.toggle('is-zero', got === 0);
+        show(row.points, 'anim-pop');
+        running.set(row.entry.id, running.get(row.entry.id) + got);
+        const chip = totals.querySelector(`[data-id="${row.entry.id}"] b`);
+        chip.textContent = String(running.get(row.entry.id));
+        chip.classList.remove('anim-pop');
+        void chip.offsetWidth;
+        chip.classList.add('anim-pop');
+      }
+    }, POINTS_MS);
+  }
+
+  function scoreboard() {
+    const ordered = byPlace(reveal);
+    const champions = ordered.filter((entry) => entry.won);
+    step.textContent = reveal.draw
+      ? `🤝 It's a draw: ${champions.map((entry) => entry.name).join(' and ')}`
+      : `🏆 ${champions[0].name} read the market best${reveal.tieBroken ? ' (closer on the median)' : ''}`;
+    totals.classList.add('is-waiting');
+    stage.replaceChildren(h('div', { class: 'pvh-board anim-fade' }, ordered.map((entry, i) =>
+      h('div', { class: `pvh-board__row anim-slide${entry.won ? ' is-won' : ''}`, style: `animation-delay:${i * 180}ms` },
+        h('span', { class: 'pvh-board__place' }, entry.won ? (reveal.draw ? '🤝' : '🏆') : `#${entry.place}`),
+        avatarEl(entry.avatar, entry.ring),
+        h('span', { class: 'pvh-board__name' }, entry.name),
+        h('span', { class: 'pvh-board__parts' },
+          h('span', null, 'Median ', h('b', null, String(entry.median.points))),
+          h('span', null, 'Winner ', h('b', null, String(entry.winner.points))),
+          h('span', null, 'Middle ', h('b', null, String(entry.middle.points)))),
+        h('span', { class: 'pvh-board__score' }, String(entry.score), h('small', null, ` / ${reveal.maxScore}`))))));
+    confetti();
+  }
+
+  questions.forEach((question, i) => later(() => ask(question, i), 1600 + i * QUESTION_MS));
+  later(scoreboard, 1600 + questions.length * QUESTION_MS);
 }
 
 // ----- final standings: a podium of market stalls, then the full board -----

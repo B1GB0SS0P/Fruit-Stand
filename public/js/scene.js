@@ -31,7 +31,7 @@ const brightness = (hex) => {
 // Which backdrop a game state uses. The reveal shares the dusk scene.
 export function sceneFor(state) {
   if (!state || state.status === 'lobby') return 'lobby';
-  if (state.status === 'reveal' || state.status === 'final') return 'final';
+  if (['reveal', 'predictions', 'final'].includes(state.status)) return 'final';
   const step = Math.ceil((state.round / Math.max(1, state.totalRounds)) * 4);
   return `round${Math.max(1, Math.min(4, step))}`;
 }

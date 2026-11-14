@@ -1,6 +1,7 @@
 import { fruitName, teammateOf, findPlayer } from './engine.js';
 import { computeStandings } from './scoring.js';
 import { toMoney, ZERO } from './frac.js';
+import { scorePredictions } from './predictions.js';
 
 const BID_TYPES = {
   submitted: 'submitted',
@@ -64,6 +65,38 @@ export function resultsCsv(state) {
       row.partners[2] ?? '',
       toMoney(row.shares[2] ?? ZERO),
       row.totalText,
+    ]));
+  }
+  // Predictors vs Host: every answer, the actual values and the points.
+  const reveal = scorePredictions(state);
+  const pickName = (pick) => (pick ? pick.name : 'no answer');
+  const pickRank = (pick) => (pick ? `${pick.tied ? 'T-' : ''}${pick.rank}` : '');
+  lines.push('');
+  lines.push(line(['Predictions']));
+  lines.push(line(['Actual median total', reveal.actual.median]));
+  lines.push(line(['Actual winner', reveal.actual.first.map((p) => p.name).join(' / ')]));
+  lines.push(line(['Middle positions', reveal.actual.middlePositions.join(' and ')]));
+  lines.push(line(['Players in the middle', reveal.actual.middle.map((p) => p.name).join(' / ')]));
+  lines.push(line([
+    'Predictor', 'Role', 'Median guess', 'Actual median', 'Median points',
+    'Winner pick', 'Winner pick rank', 'Winner points',
+    'Middle pick', 'Middle pick rank', 'Middle points', 'Total points', 'Result',
+  ]));
+  for (const entry of reveal.entries) {
+    lines.push(line([
+      entry.name,
+      entry.isHost ? 'host' : 'predictor',
+      entry.median.guess ?? 'no answer',
+      reveal.actual.median,
+      entry.median.points,
+      pickName(entry.winner.pick),
+      pickRank(entry.winner.pick),
+      entry.winner.points,
+      pickName(entry.middle.pick),
+      pickRank(entry.middle.pick),
+      entry.middle.points,
+      entry.score,
+      entry.won ? (reveal.draw ? 'draw' : 'winner') : '',
     ]));
   }
   return lines.join('\r\n') + '\r\n';

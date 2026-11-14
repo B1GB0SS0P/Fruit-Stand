@@ -81,3 +81,4 @@
 .board li { display: flex; gap: 8px; padding: 4px 0; font-weight: 800; break-inside: avoid; }
 .board .b-rank { width: 2.4em; }
 .board .b-name { flex: 1; overflow-wrap: anywhere; }
+.people .btn { white-space: nowrap; flex: none; }

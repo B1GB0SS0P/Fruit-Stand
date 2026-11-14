@@ -3,7 +3,7 @@ import { resolveConfig } from '../config.js';
 
 const FORMAT = 'fruit-stand-snapshot';
 const VERSION = 1;
-const STATUSES = ['lobby', 'bidding', 'results', 'reveal', 'final'];
+const STATUSES = ['lobby', 'bidding', 'results', 'reveal', 'predictions', 'final'];
 
 // A complete copy of the game. The timer is stored as time remaining, so it
 // does not depend on the clock of the server that later loads it.
@@ -43,6 +43,13 @@ export function importSnapshot(snapshot) {
   for (const round of state.rounds) {
     if (round.ambient === undefined) round.ambient = null;
   }
+  // Snapshots saved before predictors existed.
+  if (!Array.isArray(state.predictors)) state.predictors = [];
+  if (!state.predictions || typeof state.predictions !== 'object') state.predictions = {};
+  if (typeof state.predictionsLocked !== 'boolean') {
+    state.predictionsLocked = state.round >= state.config.predictionLockRound || ['reveal', 'predictions', 'final'].includes(state.status);
+  }
+  state.hostPlaying = Boolean(state.hostPlaying);
   state.timer = { remainingMs: state.timer.remainingMs, runningSince: null };
   return state;
 }

@@ -2,7 +2,7 @@
 
 A live pricing game for a room of people on their phones, with a projector showing the shared market. Adapted from a game on the Korean show _The Genius_ (Season 3). One game takes 20–30 minutes.
 
-Players are paired up and each sells one fruit. Every round they secretly pick a price from $1 to $5. The lowest price sells all of that fruit, so rivals can cooperate at $5 or undercut each other.
+Players are paired up and each sells one fruit. Every round they secretly pick a price from $1 to $5. The lowest price sells all of that fruit, so the sellers of a fruit can all hold at $5 or undercut each other.
 
 It is one Node.js service (Express + Socket.IO) with no database.
 
@@ -42,7 +42,7 @@ To try it alone, open the player page in several private windows. Each one becom
 npm test
 ```
 
-This runs the engine tests and the Socket.IO tests, which connect real clients and play full games with 8, 40 and 60 bots. It takes about 40 seconds.
+This runs the engine tests and the Socket.IO tests, which connect real clients and play full games with 8, 40 and 60 bots, and a 40-player game with 2 predictors and the host. It takes about 45 seconds.
 
 ## Deploy to Render
 
@@ -81,15 +81,25 @@ Before people arrive:
 In the lobby:
 
 4. Players scan the QR code (or go to the site and type the code), then enter a name and pick an avatar.
-5. The count must be even and at least 4. If it is odd, **Remove** someone and give them a separate task. **Lock lobby** stops new joins.
-6. Press **Start game**.
+5. The count must be even and at least 4. If it is odd, **Remove** someone and give them a separate task, or press **Make Predictor** on them. **Lock lobby** stops new joins.
+6. Optional: choose up to 3 **predictors** with **Make Predictor**. A predictor does not play: no fruit, no bids, and they do not count towards the even number. They watch the market and predict how it ends. **Make player** undoes it while you are still in the lobby.
+7. Press **Start game**.
+
+The market grows with the room: 2 sellers per fruit up to 20 players, 3 up to 30 and 4 up to 40 (so 40 players share 10 fruits).
+
+Predictions (the predictors on their phones, and you on the host panel):
+
+- Three questions: the **median total** (the average of the two middle totals, in dollars and cents), the **winner**, and a **middle player** (someone who finishes in one of the two middle places).
+- Each answer saves as soon as it is entered and can be changed until you press **Start round 3**. Then everything locks. A missing answer scores 0.
+- Your panel lists who has submitted all three, by name only. Nobody sees anyone else's answers before the reveal, and that includes you.
+- If you are also playing, tick **I'm also playing in this game**. It ticks itself if this browser also holds a player seat in the room.
 
 Each round (there are 4):
 
-7. Players pick a price and press **Submit**, which locks it in. They can use their one Change token before submitting.
-8. The round ends when everyone has submitted or the 5-minute timer runs out. At time-out, a price that was picked but not submitted is used, and anyone who picked nothing gets $5.
-9. You can use **+1 min**, **Pause**, **Remind** (nudges everyone who has not submitted) and **Set bid** (for someone who cannot use their phone).
-10. The projector shows each fruit's lowest price. Press **Start round N** to carry on. New partners are made at round 3.
+8. Players pick a price and press **Submit**, which locks it in. They can use their one Change token before submitting.
+9. The round ends when everyone has submitted or the 5-minute timer runs out. At time-out, a price that was picked but not submitted is used, and anyone who picked nothing gets $5.
+10. You can use **+1 min**, **Pause**, **Remind** (nudges everyone who has not submitted) and **Set bid** (for someone who cannot use their phone).
+11. The projector shows each fruit's lowest price. Press **Start round N** to carry on. New partners are made at round 3, and predictions lock.
 
 Round 2 is the Secret Market. Nobody is told which fruits are secret, or how many, and that includes you: the host panel never shows it. The round opens with a teaser ("Some stands might close up shop… 👀") and a curtain on every stand. When the round ends, the curtains lift on the ordinary fruits and their prices show; the secret fruits stay curtained until the end.
 
@@ -97,9 +107,20 @@ During round 2 only, faint fruit drifts across the background of the projector a
 
 After round 4:
 
-11. Press **Reveal hidden prices**. The projector uncovers the secret stands one at a time.
-12. When the last one is uncovered, press **Show final standings**. The projector reveals 3rd, then 2nd, then 1st, then the full board. Each phone shows that player's own receipt and the standings.
-13. **Download results CSV** gives you every bid, every earning, which fruits were secret and the final totals.
+12. Press **Reveal hidden prices**. The projector uncovers the secret stands one at a time.
+13. When the last one is uncovered, press **Predictors vs Host**. The projector takes the three questions one at a time (the actual answer, everyone's answer, then the points counting up) and ends on the predictor scoreboard. It takes about 40 seconds. Note that the Winner question shows who came 1st, just before the podium does. **Skip to standings** leaves this step out.
+14. Press **Show final standings**. The projector reveals 3rd, then 2nd, then 1st, then the full board. Each phone shows that player's own receipt and the standings; a predictor's phone shows their prediction receipt.
+15. **Download results CSV** gives you every bid, every earning, which fruits were secret, the final totals and the predictions with their points.
+
+How predictions are scored (5 points per question, 15 in all):
+
+| Question | Points |
+| --- | --- |
+| Median total | 5 minus the distance from the actual median, rounded to whole dollars (a half rounds up). $1.50 off scores 3. |
+| Winner | 5 if the pick finishes 1st, 4 for 2nd, 3 for 3rd, 2 for 4th, 1 for 5th. Players tied for 1st all count as 1st. |
+| Middle player | 5 if the pick finishes in one of the two middle places, 1 fewer for each place further away. Tied players share their places, so a pick tied with someone in the middle scores 5. |
+
+The highest total wins. A tie goes to whoever was closer on the median; if that is level too, it is a draw.
 
 The host panel never shows a price, an earning, a total or which fruits are secret before the final standings, so you can join as a player on another device.
 
@@ -124,7 +145,7 @@ Snapshots are encrypted with the host password, because they contain every bid. 
 
 ## Change the settings
 
-- `config.js` has the fruit list, the avatars and every rule setting: sellers per fruit, price range, number of rounds, the Secret Market round and share, Change tokens, the bid timer, and the player limit (0 means no limit).
+- `config.js` has the fruit list, the avatars and every rule setting: the market size (`minSellersPerFruit` and `sellersDivisor`), the predictors (`maxPredictors`, and `predictionLockRound` for when predictions lock), price range, number of rounds, the Secret Market round and share, Change tokens, the bid timer, and the player limit (0 means no limit).
 - `config.js` also has the look:
   - `skyTheme`: the sky colours for the lobby, each round and the final standings, top to bottom. Change one state and the rest keep their defaults.
   - `avatarRingColors`: the ring colours. Each player gets the first one that is free for their animal, so no two players look the same.
@@ -140,7 +161,9 @@ npm run preview
 
 This plays two real games with bots (4 and 40 players) and saves screenshots of the projector and a phone at the lobby, round 2, round 4 and the final standings into `preview/`. It needs Chrome or Edge installed. `npm run preview -- 12` uses another player count.
 
-With more than 40 players the 20 fruits get three or more sellers each, so the "one rival" line on slide 2 is no longer exact.
+`npm run preview -- predictions` plays a 40-player game with 2 predictors and the host, and saves the prediction form, the locked screen and the "Predictors vs Host" reveal (projector, a predictor's phone and the host panel) into `preview/predictions/`.
+
+The market scales with the room: 2 sellers per fruit up to 20 players, 3 up to 30 and 4 up to 40.
 
 ## How the code is laid out
 

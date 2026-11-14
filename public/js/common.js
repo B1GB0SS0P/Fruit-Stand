@@ -177,3 +177,17 @@ export function loadContent() {
 }
 
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// Like parent.replaceChildren(...nodes), but if `keep` is already in the
+// parent it is left where it is, so a field inside it keeps its focus and
+// the phone keyboard stays up while the rest of the page redraws.
+export function replaceKeeping(parent, nodes, keep) {
+  const at = nodes.indexOf(keep);
+  if (at < 0 || keep.parentNode !== parent) {
+    parent.replaceChildren(...nodes);
+    return;
+  }
+  for (const child of [...parent.childNodes]) if (child !== keep) child.remove();
+  keep.before(...nodes.slice(0, at));
+  keep.after(...nodes.slice(at + 1));
+}

@@ -2,8 +2,9 @@
 
 import {
   $, h, toast, store, connect, call, watchConnection, Countdown, clockText,
-  fruitLookup, makeStand, loadContent, plural, avatarEl, rankLabel,
+  fruitLookup, makeStand, loadContent, plural, avatarEl, rankLabel, replaceKeeping,
 } from './common.js';
+import { createPredictionForm, predictionReceipt } from './predict.js';
 import { mountScene, sceneFor } from './scene.js';
 
 const SEAT_KEY = 'fruitstand:seat';
@@ -311,10 +312,16 @@ function render() {
   if (state.status !== 'bidding') closeSheet();
 
   if (state.status !== 'final') finalShown = false;
+  const predictor = state.role === 'predictor';
   if (state.status === 'lobby') renderWaiting();
   else if (state.status === 'reveal') {
     showMessage('👀', 'All eyes on the big screen', 'The closed stands are opening up…');
+  } else if (state.status === 'predictions') {
+    showMessage('🔮', 'Predictors vs Host', predictor
+      ? 'Your predictions are being scored on the big screen…'
+      : 'All eyes on the big screen. Who read the market best?');
   } else if (state.status === 'final') renderFinal();
+  else if (predictor) renderPredictor();
   else renderRound();
 
   countdown.set(state.timer);
@@ -322,14 +329,20 @@ function render() {
   lastSubmitted = state.me.submitted;
 }
 
+const PREDICTOR_BANNER = "You can walk around, chat and influence the market, but you can't bid.";
+
 function renderWaiting() {
   const { me } = state;
+  const predictor = state.role === 'predictor';
   app.replaceChildren(h('section', { class: 'waiting' },
     h('div', { class: 'chalk-sign' }, 'Opening soon'),
-    h('h1', null, "You're in!"),
+    h('h1', null, predictor ? "You're a predictor 🔮" : "You're in!"),
     avatarEl(me.avatar, me.ring, 'waiting__avatar anim-pop'),
     h('div', { class: 'waiting__name' }, me.name),
     h('p', { class: 'waiting__count' }, `${plural(state.playerCount, 'player')} joined`),
+    predictor
+      ? h('p', { class: 'card predictor-note' }, "You won't run a stand. Once the game starts, you predict how it will end: the median total, the winner and the middle player.")
+      : null,
     h('p', { class: 'muted' }, 'Waiting for the host to start. Keep this page open.'),
     h('a', { class: 'btn btn--sun', href: '/how-to-play?back=/' }, '📖 How to play'),
   ));
@@ -469,6 +482,80 @@ function renderRound() {
   app.replaceChildren(...parts);
 }
 
+// ---------- the predictor's phone ----------
+
+// Built once, so a half-typed answer survives the page redrawing around it.
+const predictionForm = createPredictionForm({
+  save: (answers) => call(socket, 'predictor:save', answers),
+});
+
+function renderPredictor() {
+  const bidding = state.status === 'bidding';
+  const byId = new Map(state.players.map((p) => [p.id, p]));
+  const parts = [];
+
+  parts.push(h('header', { class: 'bar' },
+    h('div', null,
+      h('div', { class: 'bar__round' }, `Round ${state.round} of ${state.totalRounds}`),
+      h('div', { class: 'bar__phase' }, `Phase ${state.phase} · Predictor`),
+    ),
+    bidding ? h('div', { class: 'timer', id: 'timer', role: 'timer' }, '') : h('div', { class: 'timer is-paused' }, 'Done'),
+  ));
+  parts.push(h('p', { class: 'predictor-banner' }, h('span', null, '🔮'), PREDICTOR_BANNER));
+  if (state.curtained) parts.push(h('section', { class: 'teaser anim-slide' }, teaser));
+  parts.push(h('p', { class: 'status' }, bidding
+    ? `${state.bidsIn} / ${state.playerCount} prices locked in`
+    : 'Round over. Waiting for the host…'));
+
+  predictionForm.update({
+    players: state.players,
+    prediction: state.prediction,
+    locked: state.predicting.locked,
+    lockRound: state.predicting.lockRound,
+  });
+  parts.push(predictionForm.el);
+
+  if (!bidding) {
+    const latest = state.results.find((r) => r.round === state.round);
+    if (latest) {
+      parts.push(h('section', { class: 'card panel' },
+        h('h3', null, `Round ${latest.round}: lowest prices`),
+        resultList(latest, null),
+        latest.fruits.some((f) => f.price === null)
+          ? h('p', { class: 'muted', style: 'margin-top:8px' }, closedNote) : null,
+      ));
+    }
+  }
+
+  if (state.announcements.length) {
+    parts.push(h('section', { class: 'card panel' },
+      h('h3', null, 'Market news'),
+      h('ul', { class: 'news' }, [...state.announcements].reverse().map((a) =>
+        h('li', null, `🔄 ${a.text} `, h('small', null, `(round ${a.round})`)))),
+    ));
+  }
+
+  const face = (id) => {
+    const p = byId.get(id);
+    return p ? h('span', { class: 'who' }, avatarEl(p.avatar, p.ring), h('span', { class: 'who__name' }, p.name)) : null;
+  };
+  parts.push(h('section', { class: 'card panel' },
+    h('h3', null, `Teams · Phase ${state.phase}`),
+    h('ul', { class: 'pairs' }, state.pairs.map(([a, b]) => h('li', null, face(a), h('span', { class: 'pairs__and' }, '+'), face(b)))),
+  ));
+
+  const past = state.results.filter((r) => bidding || r.round !== state.round).reverse();
+  if (past.length) {
+    parts.push(h('section', { class: 'card panel' },
+      h('h3', null, 'Past rounds'),
+      h('div', { class: 'history' }, past.map((round) =>
+        h('div', null, h('h4', null, `Round ${round.round}`), resultList(round, null)))),
+    ));
+  }
+
+  replaceKeeping(app, parts, predictionForm.el);
+}
+
 async function pick(price, button) {
   if (!state || state.me.submitted) return;
   // Show the pick at once; the server's answer confirms or corrects it.
@@ -584,13 +671,16 @@ function renderFinal() {
     )));
   const box = h('div', { class: 'board-box' }, list);
 
-  app.replaceChildren(
+  const reveal = state.predictionReveal;
+  const mine = state.role === 'predictor' && reveal ? reveal.entries.find((entry) => entry.id === state.me.id) : null;
+  app.replaceChildren(...[
     state.receipt ? receipt() : null,
+    mine ? predictionReceipt(mine, reveal, state.code, !finalShown) : null,
     h('section', { class: 'card panel' }, h('h3', null, '🏆 Final standings'), box),
-  );
+  ].filter(Boolean));
   finalShown = true;
 
   // Bring the player's own row into view inside the list.
-  const mine = list.querySelector('.is-me');
-  if (mine) box.scrollTop = Math.max(0, mine.offsetTop - box.clientHeight / 2 + mine.offsetHeight / 2);
+  const myRow = list.querySelector('.is-me');
+  if (myRow) box.scrollTop = Math.max(0, myRow.offsetTop - box.clientHeight / 2 + myRow.offsetHeight / 2);
 }

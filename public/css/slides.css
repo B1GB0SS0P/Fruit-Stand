@@ -106,3 +106,15 @@
 @media (orientation: portrait) {
   .art-wide { flex-direction: column; align-items: center; gap: 1.5em; }
 }
+
+/* Two or three stands side by side in one illustration. */
+.art-tight { gap: 0.9em; }
+.art-fruit .stand, .art-cheapest .stand { font-size: 0.8em; }
+@media (orientation: portrait) {
+  .art-fruit .stand, .art-cheapest .stand { font-size: 0.62em; }
+  .art-cheapest .art-money { font-size: 1.35em; }
+  .art-cheapest .art-row { gap: 0.9em; }
+}
+.art-cheapest .art-money, .art-cheapest .art-board { white-space: nowrap; }
+.art-cheapest .art-money { font-size: 1.5em; }
+.art-cheapest .art-row .art-row { gap: 1.1em; }

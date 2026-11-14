@@ -8,7 +8,7 @@
     {
       "art": "fruit",
       "title": "Your fruit",
-      "text": "You get one fruit and keep it all game. One other player sells the same fruit: your rival. Your partner sells a different fruit."
+      "text": "You get one fruit and keep it all game. A few other players sell the same fruit. They're your competition. Your partner sells a different fruit."
     },
     {
       "art": "price",
@@ -18,12 +18,12 @@
     {
       "art": "cheapest",
       "title": "Cheapest wins",
-      "text": "The lowest price sells ALL of that fruit. Ties split."
+      "text": "The cheapest stall gets all the customers for that fruit. Ties split."
     },
     {
       "art": "talk",
-      "title": "Talk and make deals",
-      "text": "Find who sells your fruit and agree on a price. Results show each fruit's lowest price, never who set it."
+      "title": "Work it out together",
+      "text": "Chat with your partner and the other sellers of your fruit. Figure out your prices together. Only each fruit's lowest price is shown."
     },
     {
       "art": "change",

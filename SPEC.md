@@ -15,8 +15,9 @@ Read this whole spec before writing code. Then reply with your file structure, y
   - Round 2 is also the **Secret Market round** (see below).
   - Rounds 3–4 are **Phase 2**.
 - **The player count must be even, with a minimum of 4.** Teams are always exactly 2 players.
-  - The host removes players in the lobby until the count is even. Any extra player gets a separate task offline.
+  - The host removes players in the lobby until the count is even. Any extra player gets a separate task offline, or becomes a **predictor** (see Predictors).
   - Starting with an odd count is refused.
+  - Predictors are not players. They never count towards the player count, the even-count rule or the teams.
 - **Phase 1 teams:** random pairs, made when the host starts the game.
 - **Phase 2 teams:** new random pairs, made when round 3 starts.
   - The only constraint is **no one is paired with their Phase 1 partner**. This is a hard rule, except with 4 players, where it may be impossible; then pick the arrangement with the fewest repeats.
@@ -25,9 +26,19 @@ Read this whole spec before writing code. Then reply with your file structure, y
 **Dealing fruits**
 
 - Each player is dealt **one fruit** when the game starts and keeps it for all 4 rounds. Only a Change (below) alters it.
-- Active fruit count: `k = min(poolSize, floor(players / sellersPerFruit))`, where `sellersPerFruit` is in config (default 2). For example, 8 players → 4 fruits, and 40 players → 20 fruits.
+- **The market scales with the player count.** Sellers per fruit: `sellersPerFruit = max(minSellersPerFruit, ceil(players / sellersDivisor))`. Both settings are in config (defaults 2 and 10).
+- Active fruit count: `k = min(poolSize, floor(players / sellersPerFruit))`.
+
+  | Players | Sellers per fruit | Fruits in play |
+  | ------- | ----------------- | -------------- |
+  | 4–20    | 2                 | players ÷ 2    |
+  | 22–30   | 3                 | 7–10           |
+  | 32–40   | 4                 | 8–10           |
+
+  For example, 8 players → 4 fruits of 2 sellers, 30 players → 10 fruits of 3, and 40 players → 10 fruits of 4.
 - Pick the k active fruits at random from the pool.
-- Spread players across the k fruits as evenly as possible, with these rules:
+- Spread players across the k fruits as evenly as possible. Leftover players add one extra seller to some fruits, so every fruit has `sellersPerFruit` sellers or one more.
+- Dealing rules:
   - **Every active fruit has ≥ 2 sellers.**
   - **Phase 1 teammates never share a fruit.**
 - Retry random deals until valid (up to ~500 attempts). If none works, show the host an error.
@@ -50,7 +61,7 @@ Read this whole spec before writing code. Then reply with your file structure, y
 - `units` = number of players selling that fruit this round.
 - `lowest` = lowest bid among those sellers.
 - Each seller who bid `lowest` earns `lowest × units ÷ (number of sellers tied at lowest)`. Every other seller of that fruit earns 0.
-- Example: Apple has 2 sellers bidding $4 and $3. The $3 seller earns $6 and the other earns $0. If both bid $5, each earns $5.
+- This works for any number of sellers. Example: Apple has 3 sellers bidding $5, $5 and $4. The $4 seller earns 3 × $4 = $12 and the others earn $0. If all three bid $5, each earns $5. If two tie at $4, each of those two earns $6.
 
 **Change (ability token)**
 
@@ -65,7 +76,7 @@ Read this whole spec before writing code. Then reply with your file structure, y
 
 **Secret Market (round 2 only)**
 
-- When round 2 opens, the server randomly picks `max(1, round(k × secretShare))` active fruits as **secret fruits**. `secretShare` is in config, default 0.25 (so 40 players → 5 of 20 fruits).
+- When round 2 opens, the server randomly picks `max(1, round(k × secretShare))` active fruits as **secret fruits**. `secretShare` is in config, default 0.25 (so 40 players → 3 of 10 fruits; halves round up).
 - **Nobody is told which fruits are secret, or how many.**
   - Round 2 opens with a neutral teaser only: "Some stands might close up shop… 👀".
   - No UI says that a specific fruit is secret.
@@ -98,8 +109,70 @@ Read this whole spec before writing code. Then reply with your file structure, y
 - Players never see their own earnings during the game.
 - After round 4:
   1. Reveal the secret prices (above).
-  2. Show the **final standings**. Each player's total is `(Phase 1 team's combined earnings ÷ 2) + (Phase 2 team's combined earnings ÷ 2)`. List every player, ranked, with their avatar and total to 2 decimal places. Tied totals share a rank.
-  3. Each player also gets **their own receipt** on their phone: their earnings per round, each team's total ÷ 2, their final total and their rank. A player never receives anyone else's receipt.
+  2. Reveal the predictions: **"🔮 Predictors vs Host"** (see Predictors).
+  3. Show the **final standings**. Each player's total is `(Phase 1 team's combined earnings ÷ 2) + (Phase 2 team's combined earnings ÷ 2)`. List every player, ranked, with their avatar and total to 2 decimal places. Tied totals share a rank.
+  4. Each player also gets **their own receipt** on their phone: their earnings per round, each team's total ÷ 2, their final total and their rank. A player never receives anyone else's receipt.
+
+**Predictors**
+
+A side game. Predictors watch the market and guess how it will end. The host always predicts too.
+
+_Who predicts_
+
+- In the lobby, the host's player list has a **Make Predictor** button next to Remove, with a confirm step.
+  - A predictor is not a player: no fruit, no bid buttons, no Change token, no team. They don't count towards the even-count rule.
+  - A room has 0–3 predictors (`maxPredictors` in config).
+  - While still in the lobby, the host can turn a predictor back into a player, or remove them.
+  - A predictor keeps their name, avatar, colour ring and seat (token and rejoin code).
+- The host always predicts too, from the host screen.
+- The host and player identities are separate, so the server cannot know that the host is also playing. The host's prediction form has an **"I'm also playing"** tick box. It ticks itself when the host's browser also holds a player seat in the room. While it is ticked, the form shows: "You're also playing. Your predictions may influence your play."
+
+_What predictors see_ (the same public info as players, minus their own stand)
+
+- The teams, Change announcements, each round's results, the timer and "X / N bids in".
+- No bids, no earnings and no totals before the end. The secret list stays hidden, exactly as for players.
+- A small banner: "You can walk around, chat and influence the market, but you can't bid."
+
+_The three predictions_
+
+1. **Median total:** the average of the totals at the two middle positions. With N players, sort by total; the middle positions are N/2 and N/2+1. Entered in dollars, to 2 decimal places.
+2. **Winner:** pick one player.
+3. **Middle player:** pick one player who will finish at position N/2 or N/2+1.
+
+- The pickers show each player's avatar, colour ring and name, with a search box (there are up to 40 players).
+- Predictions open when the game starts (the players are fixed from then on). Each answer saves as soon as it is entered.
+- **Lock time:** config `predictionLockRound`, default 3.
+  - Predictions can be edited until the host presses Next round to start that round. They then lock automatically.
+  - Any answer still missing at the lock scores 0.
+  - The host's form shows who has and hasn't submitted all three (names only). It never shows anyone's answers.
+- **Hidden until the end:** nobody sees another person's prediction, the host included, until the reveal.
+
+_Scoring_ (each question is worth up to 5 points, 15 in total)
+
+- **Median total:** `max(0, 5 − round(|guess − actual|))`. Both amounts are taken to the cent, as shown on screen, and a half rounds up. For example, if the actual median is $14.50, a guess of $13.00 is $1.50 off, which rounds to 2, so it scores 3 points.
+- **Winner:** uses the picked player's final rank. Tied players share a rank.
+  - Rank 1 scores 5, rank 2 scores 4, rank 3 scores 3, rank 4 scores 2, rank 5 scores 1, and anything lower scores 0.
+  - Players tied for 1st all count as rank 1.
+- **Middle player:**
+  - Tied players share a rank and together fill the positions from that rank downwards (3 players tied at rank 19 fill positions 19, 20 and 21).
+  - `d` is 0 if the pick, or anyone tied with the pick, is at position N/2 or N/2+1. Otherwise `d` is the distance from the pick's tied group to the nearer middle position. With no ties this is simply the distance from the pick's rank to the nearer of N/2 and N/2+1.
+  - Score `max(0, 5 − d)`.
+- **Who wins:** the highest total. Ties are broken by whoever was closer on the median (no median guess counts as furthest). If they're still tied, it's a draw.
+
+_End-of-game reveal_
+
+- It runs on the projector after the secret stands uncover and **before** the podium, under the title "🔮 Predictors vs Host". One question at a time:
+  1. the actual answer;
+  2. each predictor's and the host's answer beside it;
+  3. the points awarded, with a short count-up animation.
+- It finishes with a predictor scoreboard, and confetti for the predictor winner.
+- On a predictor's own phone, once the final standings show: their answers, the actual results and their points per question, styled as a receipt like the player receipt.
+
+_Data and privacy_
+
+- Predictions are stored on the server only. They are sent to the person who made them (for editing before the lock), and to everyone only at the reveal.
+- The CSV export includes each predictor's and the host's answers, the actual values and the points per question.
+- Snapshots include predictors, predictions and the lock state.
 
 ---
 
@@ -132,6 +205,12 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
   - in round 2, the teaser banner "Some stands might close up shop… 👀", and a curtain on their stand (every player's stand is curtained, so it tells them nothing);
   - a scrollable history of past rounds' results;
   - public Change announcements as they happen.
+- **Predictor's phone** (instead of a stand):
+  - the round, phase, countdown timer and "X / N bids in";
+  - the banner "You can walk around, chat and influence the market, but you can't bid.";
+  - the prediction form (median total, winner picker, middle player picker). After the lock it becomes a read-only "🔒 Predictions locked" card showing their own answers;
+  - the teams, Change announcements and each round's results, exactly as public as for players (curtains and teaser included in round 2);
+  - at the end: their prediction receipt, then the standings list.
 - **Final screen:**
   - **A receipt from the player's stand:** a paper-receipt look with a torn edge and a monospace price column. It lists each round's earnings (R1, R2, R3, R4), Team 1 total ÷ 2, Team 2 total ÷ 2, the final total and the rank ("#3 of 40").
   - **Then a compact standings list,** with the player's own row highlighted and the list auto-scrolled to it.
@@ -143,14 +222,16 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
 - **Round:**
   - the whole market as a row or grid of little stands, one per active fruit;
   - "X / N bids in" (no names) and a big countdown timer;
+  - a small note under the round title saying whether predictions are still open or locked;
   - a toast for each Change announcement.
   - With 20 fruits, the stands must still fit on one 16:9 screen without scrolling.
 - **Round 2 start:** the teaser card "Some stands might close up shop… 👀" shows briefly, then a curtain drops over **every** stand. The ambience fades in.
 - **Results:** price tags drop onto each stand. After round 2, the curtains lift on the non-secret stands only; the rest stay curtained with no price. The ambience fades out.
 - **End (final standings),** on the dusk background:
   1. The secret stands uncover one by one, showing their round 2 lowest prices.
-  2. 3rd place is revealed, then 2nd, then 1st, with a pause between each.
-  3. Confetti for 1st place.
+  2. **"🔮 Predictors vs Host":** the three questions one at a time (actual answer, everyone's answer, points counting up), then the predictor scoreboard with confetti for the predictor winner. Players' phones say to watch the big screen.
+  3. 3rd place is revealed, then 2nd, then 1st, with a pause between each.
+  4. Confetti for 1st place.
   - **Podium:** the steps look like market stalls (striped awning, crates, chalkboard sign) with clearly different heights. Ties are labelled "T-2" and so on and share a step. A step is chosen by the rank number, so numbering never skips onto the wrong step: two players tied for 1st share the top stall, the next player is 3rd and stands on the 3rd stall, and the 2nd stall is left out.
   - **Below the podium:** a full ranked board in 2–3 columns that fits 40 players on one 16:9 screen without scrolling. Each row shows rank, avatar with its colour ring, name and total.
 
@@ -158,16 +239,18 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
 
 - Create a room, which generates a short code (e.g. 4 letters).
 - **Lobby:**
-  - a live player list with a **Remove** button on each (with confirm);
+  - a live player list with a **Remove** button and a **Make Predictor** button on each (both with confirm);
+  - a list of the predictors (up to `maxPredictors`), each with **Make player** and **Remove**;
   - a **Lock lobby** toggle;
   - the player count, shown prominently;
   - a **Start** button that stays disabled while the count is odd or under 4, with a hint like "11 players: remove 1 to start".
-- **Start game**, then **Next round** (only after the current round resolves). **Reset**, either keeping players or wiping them, with a confirm step.
+- **Predictions:** from the start of the game the host has their own prediction form (the same three questions), the "I'm also playing" tick box, and a list of who has and hasn't submitted all three (names only). It locks with everyone else's.
+- **Start game**, then **Next round** (only after the current round resolves). After the last round: **Reveal hidden prices**, then **Predictors vs Host**, then **Show final standings**. **Reset**, either keeping players or wiping them, with a confirm step.
 - **Status:** who has bid and who hasn't, as names only. **Never show the host any prices, earnings, totals, secret prices or which fruits are secret before the end.** I may be playing myself.
 - **Remind:** sends a nudge to everyone who hasn't bid.
 - **Timer controls:** +1 min and pause/resume.
 - **Set bid for a player:** for someone whose phone died. The host enters it blind.
-- **Download the final results CSV** after the game ends. It includes all bids per round with earnings, which fruits were secret, and the final totals.
+- **Download the final results CSV** after the game ends. It includes all bids per round with earnings, which fruits were secret, the final totals, and the predictions (everyone's answers, the actual values and the points per question).
 - **Download or upload a game snapshot (JSON)** at any time, to restore the game after a server restart.
 - The host can also join as a player from another device. Host and player identities are separate.
 
@@ -177,14 +260,15 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
 - I'll use it to explain the game before starting.
 - Each slide has one idea, a big illustration (stands, price tags, avatars) and at most ~25 words. Use this content:
   1. **Welcome to Fruit Stand 🍎** — You and a partner run fruit stands. Most money at the end wins.
-  2. **Your fruit** — You get one fruit and keep it all game. One other player sells the same fruit: your rival. Your partner sells a different fruit.
+  2. **Your fruit** — You get one fruit and keep it all game. A few other players sell the same fruit. They're your competition. Your partner sells a different fruit.
   3. **Set your price** — Each round, secretly pick $1–$5 on your phone. You have 5 minutes. No bid = $5.
-  4. **Cheapest wins** — The lowest price sells ALL of that fruit. Illustration: You $4, rival $3 → rival earns 2 × $3 = $6, you earn $0. Both $5 → $5 each. Ties split.
-  5. **Talk, deal, betray** — Find your rival, make deals… or break them. Results show only each fruit's lowest price, never who set it.
+  4. **Cheapest wins** — The cheapest stall gets all the customers for that fruit. Ties split. Illustration: 3 sellers at $5, $5 and $4 → the $4 seller earns 3 × $4 = $12, the others earn $0. All three at $5 → $5 each.
+  5. **Work it out together** — Chat with your partner and the other sellers of your fruit. Figure out your prices together. Only each fruit's lowest price is shown.
   6. **Change token 🔄** — Once per game, switch to another fruit before you bid. Everyone is told.
   7. **Partners** — Rounds 1–2 with one partner, rounds 3–4 with a new one. Your score = half of each team's earnings.
   8. **Winning 🏆** — Nobody sees totals until the end. Final standings are revealed after round 4.
 
+- Keep the wording neutral and business-like ("the cheapest stall gets the customers"). Nothing about rivals or betrayal.
 - **Don't mention the Secret Market or the round 2 ambience anywhere in How to Play.** It's a surprise. When round 2 starts, show only the teaser: "Some stands might close up shop… 👀". Round 2's results add one line: "Some stands stayed closed. Their prices stay hidden until the end — even from their sellers."
 - Keep the slide text, the teaser and the results line in one config or content file so I can edit the wording without touching code.
 
@@ -243,7 +327,8 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
   - a player receives only their own bid, their team's info, public announcements and results;
   - which fruits are secret is never sent to any client before round 2 resolves (the ambient sequence of emojis and timing is the one deliberate exception);
   - secret fruits' prices are never sent to any client until the end reveal;
-  - other players' bids never reach any client before the end, including the host and the screen.
+  - other players' bids never reach any client before the end, including the host and the screen;
+  - a prediction is sent only to the person who made it until the prediction reveal. The host gets names of who has submitted, never answers.
 
 **Game logic as a pure module** (e.g. `game/engine.js`)
 
@@ -276,7 +361,10 @@ The projector lobby shows each avatar and name popping in as players join, Kahoo
 | ------------------------ | -------------------------------- |
 | Fruit pool               | the 20 fruits above, with emojis |
 | Avatar set               | ~24 animal emojis                |
-| `sellersPerFruit`        | 2                                |
+| `minSellersPerFruit`     | 2                                |
+| `sellersDivisor`         | 10                               |
+| `maxPredictors`          | 3                                |
+| `predictionLockRound`    | 3                                |
 | `changeTargets`          | `"active"`                       |
 | Min / max price          | 1 / 5                            |
 | Total rounds             | 4                                |
@@ -306,8 +394,8 @@ Use Vitest (or similar) for the engine, plus Socket.IO integration tests with re
    - a removed player's token is revoked;
    - starting is refused with an odd count or fewer than 4 players.
 2. **Dealing,** for every even player count from 4 to 40:
-   - the active fruit count matches the formula;
-   - every active fruit has ≥ 2 sellers;
+   - `sellersPerFruit` and the active fruit count match the formulas;
+   - every active fruit has at least `sellersPerFruit` sellers and at most one more;
    - Phase 1 teammates never share a fruit;
    - each player has exactly one fruit;
    - fruits persist across rounds.
@@ -320,7 +408,7 @@ Use Vitest (or similar) for the engine, plus Socket.IO integration tests with re
    - a stale round number is rejected;
    - the round resolves exactly once, on the last bid;
    - **timer:** on expiry, missing bids become $5 and the round resolves; an early full set of bids cancels the timer; +1 min and pause/resume work; a bid arriving after expiry is rejected. Use fake timers.
-5. **Scoring:** a single lowest bidder, a two-way tie, and a fruit with 1 or 3 sellers after a Change.
+5. **Scoring:** a single lowest bidder, a two-way tie, and a fruit with 1 or 3 sellers after a Change. Markets of 3, 4 and 5 sellers, including a single lowest seller, a 2-way tie and an everyone-ties case for 4 sellers.
 6. **Change:**
    - refused after bidding, with the token kept;
    - permanent;
@@ -343,6 +431,14 @@ Use Vitest (or similar) for the engine, plus Socket.IO integration tests with re
 9. **Totals:** final totals match the formula, and **the sum of all players' totals equals the sum of all earnings**. Each player's receipt adds up to their total and is sent only to them, only at the final standings.
 10. **Snapshots:** export mid-round 2 (with secret fruits set and the timer running), import, and the game continues identically, with the same remaining time.
 11. **Full simulated games** through Socket.IO, from join to final standings, with 8 bots and with 40 bots.
+12. **Predictors:**
+    - making and unmaking a predictor in the lobby; predictors don't count towards the even-count check; at most `maxPredictors`;
+    - a predictor can't bid, Change or receive a fruit;
+    - predictions are editable before the lock and rejected after it; missing answers score 0;
+    - no payload contains another person's predictions before the reveal, and that includes the host;
+    - scoring: the median uses the two middle totals; the winner pick with a tie for 1st; the middle pick, exact (either middle rank) and off by 1, 2 and 6 positions; the tie-break by median closeness;
+    - a full simulated 40-player game with 2 predictors plus the host, ending in a correct reveal payload;
+    - a snapshot round-trip taken mid-game after the predictions lock.
 
 ---
 

@@ -4,13 +4,28 @@
 //   - which fruits are secret is withheld until the secret round resolves
 //     (the ambient sequence, emojis and timing only, is the one hint);
 //   - secret fruits' prices are withheld until the end reveal;
-//   - the host view carries no prices at all (it does show who sells what).
+//   - the host view carries no prices at all (it does show who sells what);
+//   - a prediction goes only to the person who made it until the prediction
+//     reveal. The host sees who has answered, never what.
 
-import { currentRound, findPlayer, teammateOf, changeTargetsFor, timeLeft, startCheck } from './engine.js';
+import {
+  currentRound, findPlayer, findPredictor, teammateOf, changeTargetsFor, timeLeft, startCheck,
+  predictionOf, predictionComplete, HOST_ID,
+} from './engine.js';
 import { computeStandings } from './scoring.js';
+import { scorePredictions, centsText } from './predictions.js';
 import { toMoney, ZERO } from './frac.js';
 
-const secretsRevealed = (state) => state.status === 'reveal' || state.status === 'final';
+const secretsRevealed = (state) => ['reveal', 'predictions', 'final'].includes(state.status);
+const predictionsRevealed = (state) => state.status === 'predictions' || state.status === 'final';
+
+const face = (p) => ({ id: p.id, name: p.name, avatar: p.avatar, ring: p.ring });
+
+// One person's own answers, for their own form.
+function ownPrediction(state, who) {
+  const { medianCents, winner, middle } = predictionOf(state, who);
+  return { median: medianCents === null ? null : centsText(medianCents), winner, middle };
+}
 
 // Static settings a client needs to draw the game. Sent once per connection.
 export function publicConfig(state) {
@@ -109,6 +124,11 @@ function shared(state, now) {
     phase: round ? round.phase : null,
     timer: timerView(state, now),
     playerCount: state.players.length,
+    predictorCount: state.predictors.length,
+    // Whether predictions can still be changed. Never the answers.
+    predicting: { locked: state.predictionsLocked, lockRound: state.config.predictionLockRound },
+    // Everyone's predictions and scores, once "Predictors vs Host" is shown.
+    predictionReveal: predictionsRevealed(state) ? scorePredictions(state) : null,
     bidsIn: round ? state.players.filter((p) => round.submitted[p.id]).length : 0,
     activeFruits: [...state.activeFruits],
     // While the secret round is being played every stand is curtained, and
@@ -151,12 +171,34 @@ export function playerView(state, playerId, now) {
   };
 }
 
+// A predictor sees what is public to players, minus a stand of their own:
+// the teams, the announcements, the results and the timer. Plus their own
+// predictions, and nobody else's.
+export function predictorView(state, predictorId, now) {
+  const predictor = findPredictor(state, predictorId);
+  if (!predictor) return null;
+  const round = currentRound(state);
+  const inGame = state.status !== 'lobby';
+  return {
+    role: 'predictor',
+    ...shared(state, now),
+    results: publicResults(state),
+    me: face(predictor),
+    players: inGame ? state.players.map(face) : [],
+    pairs: round ? (state.teams[round.phase] || []).map((pair) => [...pair]) : [],
+    prediction: inGame ? ownPrediction(state, predictor.id) : null,
+  };
+}
+
 export function screenView(state, now) {
+  const inLobby = state.status === 'lobby';
+  const chip = (p) => ({ name: p.name, avatar: p.avatar, ring: p.ring });
   return {
     role: 'screen',
     ...shared(state, now),
     results: publicResults(state),
-    players: state.status === 'lobby' ? state.players.map((p) => ({ name: p.name, avatar: p.avatar, ring: p.ring })) : [],
+    players: inLobby ? state.players.map(chip) : [],
+    predictors: inLobby ? state.predictors.map(chip) : [],
   };
 }
 
@@ -171,6 +213,16 @@ export function hostView(state, now) {
     startHint: check.hint,
     bidMin: state.config.minPrice,
     bidMax: state.config.maxPrice,
+    maxPredictors: state.config.maxPredictors,
+    predictors: state.predictors.map((p) => ({ ...face(p), rejoinCode: p.rejoinCode })),
+    // The host's own answers, and who has answered all three. Names only.
+    prediction: state.status === 'lobby' ? null : ownPrediction(state, HOST_ID),
+    predictionStatus: [...state.predictors, { id: HOST_ID, name: 'You (host)' }].map((p) => ({
+      id: p.id,
+      name: p.name,
+      done: predictionComplete(predictionOf(state, p.id)),
+    })),
+    hostPlaying: state.hostPlaying,
     players: state.players.map((p) => ({
       id: p.id,
       name: p.name,

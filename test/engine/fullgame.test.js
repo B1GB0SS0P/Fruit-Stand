@@ -60,7 +60,10 @@ describe('full games on the engine', () => {
 describe('config', () => {
   it('has the defaults from the spec', () => {
     expect(defaultConfig).toMatchObject({
-      sellersPerFruit: 2,
+      minSellersPerFruit: 2,
+      sellersDivisor: 10,
+      maxPredictors: 3,
+      predictionLockRound: 3,
       changeTargets: 'active',
       minPrice: 1,
       maxPrice: 5,
@@ -75,6 +78,9 @@ describe('config', () => {
       ambientCountPhone: 5,
     });
     expect(Object.keys(defaultConfig.skyTheme).sort()).toEqual(['final', 'lobby', 'round1', 'round2', 'round3', 'round4']);
+    expect(defaultConfig).not.toHaveProperty('sellersPerFruit');
+    // An older snapshot may still carry the removed setting; it is dropped.
+    expect(resolveConfig({ sellersPerFruit: 2 })).not.toHaveProperty('sellersPerFruit');
     expect(defaultConfig.avatarRingColors.length).toBeGreaterThanOrEqual(12);
     expect(defaultConfig.fruits).toHaveLength(20);
     expect(defaultConfig.avatars).toHaveLength(24);
@@ -83,7 +89,10 @@ describe('config', () => {
   });
 
   it('rejects settings that cannot work', () => {
-    expect(() => resolveConfig({ sellersPerFruit: 1 })).toThrow(/sellersPerFruit/);
+    expect(() => resolveConfig({ minSellersPerFruit: 1 })).toThrow(/minSellersPerFruit/);
+    expect(() => resolveConfig({ sellersDivisor: 0 })).toThrow(/sellersDivisor/);
+    expect(() => resolveConfig({ maxPredictors: -1 })).toThrow(/maxPredictors/);
+    expect(() => resolveConfig({ predictionLockRound: 1 })).toThrow(/predictionLockRound/);
     expect(() => resolveConfig({ changeTargets: 'all' })).toThrow(/changeTargets/);
     expect(() => resolveConfig({ minPrice: 6 })).toThrow(/minPrice/);
     expect(() => resolveConfig({ secretShare: 2 })).toThrow(/secretShare/);

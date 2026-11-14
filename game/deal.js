@@ -2,8 +2,14 @@ import { shuffle, sample } from './rng.js';
 
 const MAX_ATTEMPTS = 500;
 
+// Target sellers per fruit. It grows with the room, so a big game has fewer,
+// busier markets instead of many two-seller ones.
+export function sellersPerFruit(playerCount, config) {
+  return Math.max(config.minSellersPerFruit, Math.ceil(playerCount / config.sellersDivisor));
+}
+
 export function activeFruitCount(playerCount, config) {
-  return Math.min(config.fruits.length, Math.floor(playerCount / config.sellersPerFruit));
+  return Math.min(config.fruits.length, Math.floor(playerCount / sellersPerFruit(playerCount, config)));
 }
 
 // Random pairs. `ids.length` must be even.

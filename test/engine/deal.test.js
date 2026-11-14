@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { lobby, started, advanceTo, sellers, T0 } from './helpers.js';
 import { startGame } from '../../game/engine.js';
+import { sellersPerFruit, activeFruitCount } from '../../game/deal.js';
+import { defaultConfig } from '../../config.js';
 
 const COUNTS = [];
 for (let n = 4; n <= 60; n += 2) COUNTS.push(n);
@@ -10,18 +12,24 @@ describe('dealing', () => {
   it.each(COUNTS)('%i players: valid deal', (n) => {
     for (const seed of SEEDS) {
       const game = started(n, { seed });
-      const expectedFruits = Math.min(20, Math.floor(n / 2));
+      // sellersPerFruit = max(2, ceil(n / 10)); k = min(20, floor(n / sellersPerFruit)).
+      const perFruit = Math.max(2, Math.ceil(n / 10));
+      const expectedFruits = Math.min(20, Math.floor(n / perFruit));
+      expect(sellersPerFruit(n, defaultConfig)).toBe(perFruit);
+      expect(activeFruitCount(n, defaultConfig)).toBe(expectedFruits);
       expect(game.activeFruits).toHaveLength(expectedFruits);
       expect(new Set(game.activeFruits).size).toBe(expectedFruits);
 
       // Each player has exactly one fruit, and it is an active one.
       for (const player of game.players) expect(game.activeFruits).toContain(player.fruit);
 
-      // Every active fruit has at least 2 sellers, spread as evenly as possible.
+      // Every active fruit has sellersPerFruit sellers, or one more.
       const groups = sellers(game);
       const sizes = game.activeFruits.map((fruit) => (groups[fruit] || []).length);
       expect(Math.min(...sizes)).toBeGreaterThanOrEqual(2);
-      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(perFruit);
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(perFruit + 1);
+      expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(n);
 
       // Phase 1 teammates never share a fruit.
       const fruitOf = Object.fromEntries(game.players.map((p) => [p.id, p.fruit]));
@@ -30,14 +38,32 @@ describe('dealing', () => {
     }
   });
 
-  it('gives 4 fruits to 8 players and 20 fruits to 40 players', () => {
-    expect(started(8).activeFruits).toHaveLength(4);
-    expect(started(40).activeFruits).toHaveLength(20);
+  it('scales the market: 2 sellers up to 20 players, 3 up to 30, 4 up to 40', () => {
+    const table = [[4, 2, 2], [8, 2, 4], [20, 2, 10], [22, 3, 7], [30, 3, 10], [32, 4, 8], [38, 4, 9], [40, 4, 10]];
+    for (const [n, perFruit, fruits] of table) {
+      expect(sellersPerFruit(n, defaultConfig)).toBe(perFruit);
+      expect(started(n).activeFruits).toHaveLength(fruits);
+    }
+    // 38 players on 9 fruits: seven stands of 4 and two of 5.
+    const sizes = Object.values(sellers(started(38))).map((group) => group.length).sort();
+    expect(sizes).toEqual([4, 4, 4, 4, 4, 4, 4, 5, 5]);
   });
 
-  it('follows sellersPerFruit from config', () => {
-    const game = started(12, { config: { sellersPerFruit: 3 } });
+  it('follows minSellersPerFruit and sellersDivisor from config', () => {
+    const game = started(12, { config: { minSellersPerFruit: 3 } });
     expect(game.activeFruits).toHaveLength(4);
+    expect(Object.values(sellers(game)).every((group) => group.length === 3)).toBe(true);
+
+    const dense = started(24, { config: { sellersDivisor: 4 } });
+    expect(dense.activeFruits).toHaveLength(4);
+    expect(Object.values(sellers(dense)).every((group) => group.length === 6)).toBe(true);
+  });
+
+  it('never uses more fruits than the pool holds', () => {
+    const config = { sellersDivisor: 1000 };
+    expect(activeFruitCount(60, { ...defaultConfig, ...config })).toBe(20);
+    const game = started(60, { config });
+    expect(game.activeFruits).toHaveLength(20);
     expect(Object.values(sellers(game)).every((group) => group.length === 3)).toBe(true);
   });
 
@@ -60,7 +86,7 @@ describe('dealing', () => {
   it('reports an error to the host when no deal is possible', () => {
     // 4 players on a 2-fruit pool with 3 sellers per fruit: one fruit of 4,
     // so teammates must share it.
-    const game = lobby(4, { config: { sellersPerFruit: 3 } });
+    const game = lobby(4, { config: { minSellersPerFruit: 3 } });
     const result = startGame(game, T0);
     expect(result.error).toBe('deal_failed');
     expect(game.status).toBe('lobby');

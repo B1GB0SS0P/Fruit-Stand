@@ -1,11 +1,14 @@
 // The host's control panel. It never shows a price, an earning or a total
 // before the final standings: the host may be playing too.
 
-import { $, h, toast, store, connect, call, watchConnection, Countdown, clockText, plural, fruitLookup, avatarEl, rankLabel } from './common.js';
+import { $, h, toast, store, connect, call, watchConnection, Countdown, clockText, plural, fruitLookup, avatarEl, rankLabel, replaceKeeping } from './common.js';
+import { createPredictionForm, predictionBoard } from './predict.js';
 
 const PASSWORD_KEY = 'fruitstand:host-password';
 const ROOM_KEY = 'fruitstand:host-room';
 const AUTOSAVE_KEY = 'fruitstand:autosave';
+const SEAT_KEY = 'fruitstand:seat'; // the player page's seat, if this browser also plays
+const PLAYING_ASKED_KEY = 'fruitstand:host-playing-asked';
 
 const app = $('#app');
 const socket = connect();
@@ -182,8 +185,52 @@ const STATUS_TEXT = {
   bidding: 'Bidding is open',
   results: 'Round finished',
   reveal: 'Hidden prices on screen',
+  predictions: 'Predictors vs Host on screen',
   final: 'Final standings',
 };
+
+// The host's own predictions. Built once so typing is never interrupted.
+const predictionForm = createPredictionForm({
+  title: '🔮 Your predictions (host)',
+  save: (answers) => call(socket, 'host:predict', answers),
+});
+
+// If this browser also holds a player seat in the room, tick "I'm also
+// playing" once. The host can untick it.
+function noticeOwnSeat(s) {
+  const seat = store.get(SEAT_KEY);
+  if (s.hostPlaying || !seat || seat.code !== s.code || store.get(PLAYING_ASKED_KEY) === s.code) return;
+  store.set(PLAYING_ASKED_KEY, s.code);
+  call(socket, 'host:playing', { playing: true });
+}
+
+function predictionCard(s) {
+  const above = [
+    h('label', { class: 'toggle' },
+      h('input', { type: 'checkbox', checked: s.hostPlaying, onchange: (event) => act('host:playing', { playing: event.target.checked }) }),
+      "I'm also playing in this game"),
+    s.hostPlaying
+      ? h('p', { class: 'predict__warning' }, "⚠️ You're also playing. Your predictions may influence your play.")
+      : null,
+  ].filter(Boolean);
+  const below = [
+    h('div', { class: 'predict__who' },
+      h('h3', null, 'Who has submitted all three'),
+      h('ul', { class: 'chips' }, s.predictionStatus.map((p) =>
+        h('li', { class: p.done ? 'is-done' : '' }, `${p.done ? '✅' : '⏳'} ${p.name}`))),
+      h('p', { class: 'note' }, 'Names only. Nobody sees any answers, yours included, until the reveal.'),
+    ),
+  ];
+  predictionForm.update({
+    players: s.players,
+    prediction: s.prediction,
+    locked: s.predicting.locked,
+    lockRound: s.predicting.lockRound,
+    above,
+    below,
+  });
+  return predictionForm.el;
+}
 
 function render() {
   const s = state;
@@ -241,8 +288,17 @@ function render() {
     main.append(h('span', { class: 'hint' }, lastRound ? 'Plays on the big screen, one stand at a time.' : 'The timer starts as soon as the round opens.'));
   } else if (s.status === 'reveal') {
     main.append(
-      h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:standings') }, '🏆 Show final standings'),
+      h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:predictions') }, '🔮 Predictors vs Host'),
       h('span', { class: 'hint' }, 'Wait for the last stand to uncover on the big screen.'),
+      h('button', {
+        class: 'btn btn--plain btn--small', type: 'button',
+        onclick: () => { if (window.confirm('Skip the predictions reveal and go straight to the final standings?')) act('host:standings'); },
+      }, 'Skip to standings'),
+    );
+  } else if (s.status === 'predictions') {
+    main.append(
+      h('button', { class: 'btn btn--big', type: 'button', onclick: () => act('host:standings') }, '🏆 Show final standings'),
+      h('span', { class: 'hint' }, 'Wait for the predictor scoreboard on the big screen (about 40 seconds).'),
     );
   } else {
     main.append(
@@ -258,6 +314,21 @@ function render() {
   status.append(main);
   parts.push(status);
 
+  // The host predicts too. The form opens when the game starts and turns
+  // into a locked summary; after the reveal it becomes the scoreboard.
+  let keep = null;
+  if (s.predictionReveal) {
+    parts.push(h('section', { class: 'card' },
+      h('h2', null, '🔮 Predictors vs Host'),
+      predictionBoard(s.predictionReveal),
+      h('p', { class: 'note' }, `Actual median total $${s.predictionReveal.actual.median}. The CSV has every answer.`),
+    ));
+  } else if (!inLobby) {
+    noticeOwnSeat(s);
+    keep = predictionCard(s);
+    parts.push(keep);
+  }
+
   // Players: who has locked in. Names only, never prices.
   const playerList = h('ul', { class: 'people' }, s.players.map((p) => {
     const cls = bidding ? (p.submitted ? 'is-in' : 'is-waiting') : '';
@@ -271,6 +342,15 @@ function render() {
     return h('li', { class: cls },
       avatarEl(p.avatar, p.ring, 'p-avatar'),
       h('span', { class: 'p-name' }, p.name, h('small', null, sub.flatMap((item, i) => (i ? [' · ', item] : [item])))),
+      inLobby && s.maxPredictors > 0 ? h('button', {
+        class: 'btn btn--sun btn--small', type: 'button', disabled: s.predictors.length >= s.maxPredictors,
+        title: s.predictors.length >= s.maxPredictors ? `At most ${plural(s.maxPredictors, 'predictor')}` : 'They watch and predict instead of playing',
+        onclick: () => {
+          if (window.confirm(`Make ${p.name} a predictor?\n\nThey won't get a fruit or bid. They predict how the game ends instead.`)) {
+            act('host:makePredictor', { playerId: p.id }, `${p.name} is now a predictor`);
+          }
+        },
+      }, 'Make Predictor') : null,
       inLobby ? h('button', {
         class: 'btn btn--warn btn--small', type: 'button',
         onclick: () => { if (window.confirm(`Remove ${p.name} from the room?`)) act('host:remove', { playerId: p.id }, `${p.name} removed`); },
@@ -289,6 +369,33 @@ function render() {
     s.players.length ? playerList : h('p', { class: 'muted' }, 'Nobody has joined yet. Open the big screen and share the code.'),
     !inLobby ? h('p', { class: 'note' }, '🔑 shows a rejoin code for a player whose browser lost their seat.') : null,
   ));
+
+  // Predictors: not players, so not in the count above.
+  if (s.predictors.length || (inLobby && s.maxPredictors > 0)) {
+    parts.push(h('section', { class: 'card' },
+      h('h2', null, `🔮 Predictors · ${s.predictors.length} of ${s.maxPredictors}`),
+      s.predictors.length
+        ? h('ul', { class: 'people' }, s.predictors.map((p) => h('li', null,
+          avatarEl(p.avatar, p.ring, 'p-avatar'),
+          h('span', { class: 'p-name' }, p.name,
+            h('small', null, ['predictor', !p.connected ? h('span', { class: 'p-off' }, ' · offline') : null])),
+          inLobby ? h('button', {
+            class: 'btn btn--plain btn--small', type: 'button',
+            onclick: () => act('host:makePlayer', { predictorId: p.id }, `${p.name} is a player again`),
+          }, 'Make player') : null,
+          inLobby ? h('button', {
+            class: 'btn btn--warn btn--small', type: 'button',
+            onclick: () => { if (window.confirm(`Remove ${p.name} from the room?`)) act('host:remove', { playerId: p.id }, `${p.name} removed`); },
+          }, 'Remove') : null,
+          !inLobby ? h('button', {
+            class: 'btn btn--plain btn--small', type: 'button', title: 'Rejoin code',
+            onclick: () => window.alert(`${p.name}'s rejoin code is ${p.rejoinCode}\n\nOn their phone: enter the room code ${s.code}, then this rejoin code.`),
+          }, '🔑') : null,
+        )))
+        : h('p', { class: 'muted' }, 'Nobody yet. Use “Make Predictor” on a player. You always predict too, from this page.'),
+      h('p', { class: 'note' }, "Predictors don't play: no fruit, no bids, and they don't count towards the even number of players. They watch the market and predict how it ends."),
+    ));
+  }
 
   if (s.status === 'final' && s.standings) {
     parts.push(h('section', { class: 'card' },
@@ -330,7 +437,8 @@ function render() {
   ));
 
   const scroll = window.scrollY;
-  app.replaceChildren(...parts);
+  if (keep) replaceKeeping(app, parts, keep);
+  else app.replaceChildren(...parts);
   window.scrollTo(0, scroll);
   countdown.set(s.timer);
 }

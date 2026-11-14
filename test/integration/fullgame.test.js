@@ -87,7 +87,7 @@ async function playFullGame(count) {
   await t.settle();
   const room = t.server.store.get(code);
   const random = testRandom(count);
-  const expectedFruits = Math.min(20, count / 2);
+  const expectedFruits = Math.min(20, Math.floor(count / Math.max(2, Math.ceil(count / 10))));
   expect(screen.state.activeFruits).toHaveLength(expectedFruits);
 
   for (let round = 1; round <= 4; round++) {
